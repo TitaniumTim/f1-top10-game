@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>F1 Top 10 – Prototype v3</title>
+<style>
+body{margin:0;font-family:system-ui;background:#0f0f14;color:#fff}
+header{padding:16px;background:#e10600;font-weight:700}
+.container{padding:16px;max-width:1200px;margin:auto}
+.card{background:#1c1c26;border-radius:8px;padding:16px;margin-bottom:16px}
+h2{margin-top:0}
+button{padding:10px 14px;background:#e10600;border:none;border-radius:6px;color:#fff;font-weight:600;cursor:pointer}
+.grid{display:grid;gap:8px;margin-bottom:16px}
+.counter{margin-bottom:10px;font-weight:600}
+
+/* TEAM BUTTON */
+.team-btn{position:relative;padding:12px;border-radius:6px;text-align:center;font-weight:600;cursor:pointer}
+.team-btn.selected::after{
+content:"✔";
+position:absolute;
+top:6px;
+right:8px;
+background:#000;
+color:#fff;
+border-radius:50%;
+font-size:12px;
+padding:2px 6px;
+}
+
+/* ENTRANTS LIST */
+.entrants{font-size:.85rem;margin-top:6px;opacity:.9}
+
+/* STAGE 2 */
+.stage2-row{display:grid;grid-template-columns:200px 40px 120px 40px 200px;align-items:center;gap:10px;margin-bottom:10px}
+.switch{
+width:60px;height:28px;background:#444;border-radius:20px;position:relative;cursor:pointer
+}
+.switch::after{
+content:"";
+position:absolute;width:24px;height:24px;background:#fff;border-radius:50%;top:2px;left:2px;transition:.2s
+}
+.switch.active{background:#e10600}
+.switch.active::after{left:34px}
+
+/* STAGE 3 */
+.driver-row{display:grid;grid-template-columns:200px 1fr 1fr;gap:8px;margin-bottom:8px}
+.driver{padding:10px;border-radius:6px;text-align:center;cursor:pointer;font-weight:600}
+.driver.selected{outline:3px solid #fff}
+
+/* STAGE 4 */
+.stage4-layout{display:grid;grid-template-columns:40px 1fr;gap:12px}
+.position-col{display:grid;grid-template-rows:repeat(10,50px);gap:6px}
+.guess-col{display:grid;grid-template-rows:repeat(10,50px);gap:6px}
+.guess-slot{background:#2a2a38;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.75rem}
+.guess-slot.correct{background:#00b200}
+.guess-slot.wrong{background:#b20000}
+.pool{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.locked{opacity:.5}
+</style>
+</head>
+<body>
+<header>F1 TOP 10 – Prototype v3</header>
+<div class="container">
+
+<!-- SESSION SELECT -->
+<div class="card" id="session-screen">
+<h2>Select Session</h2>
+<button onclick="startGame()">British GP – FP1</button>
+</div>
+
+<!-- STAGE 1 -->
+<div class="card" id="stage1" style="display:none">
+<h2>Stage 1 – Select Teams</h2>
+<div class="counter">Selected: <span id="team-count">0</span>/6</div>
+<div class="grid" id="team-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));"></div>
+<button onclick="submitStage1()">Continue</button>
+</div>
+
+<!-- STAGE 2 -->
+<div class="card" id="stage2" style="display:none">
+<h2>Stage 2 – Cars per Team</h2>
+<div class="counter">Total Cars: <span id="car-total">0</span>/10</div>
+<div id="stage2-container"></div>
+<button onclick="submitStage2()">Continue</button>
+</div>
+
+<!-- STAGE 3 -->
+<div class="card" id="stage3" style="display:none">
+<h2>Stage 3 – Single Driver Teams</h2>
+<p id="stage3-message"></p>
+<div id="stage3-container"></div>
+<button onclick="submitStage3()">Continue</button>
+</div>
+
+<!-- STAGE 4 -->
+<div class="card" id="stage4" style="display:none">
+<h2>Stage 4 – Order the Top 10</h2>
+<div class="pool" id="driver-pool"></div>
+<div class="stage4-layout">
+<div class="position-col" id="position-col"></div>
+<div class="guess-col" id="guess-col"></div>
+</div>
+<button onclick="submitGuess()">Submit Guess</button>
+</div>
+
+</div>
+
+<script>
+const maxTeams=6
+let selectedTeams=[]
+let teamCars={}
+let resolvedDrivers=[]
+let lockedPositions=Array(10).fill(null)
+let currentGuess=Array(10).fill(null)
+
+const teamData={
+"Alpine":{color:"#0090ff",drivers:[[31,"Ocon"],[2,"Gasly"]]},
+"Aston Martin":{color:"#006f62",drivers:[[14,"Alonso"],[18,"Stroll"]]},
+"Ferrari":{color:"#dc0000",drivers:[[16,"Leclerc"],[55,"Sainz"]]},
+"Haas":{color:"#b6babd",drivers:[[20,"Magnussen"],[27,"Hulkenberg"]]},
+"McLaren":{color:"#ff8700",drivers:[[4,"Norris"],[81,"Piastri"]]},
+"Mercedes":{color:"#00d2be",drivers:[[44,"Hamilton"],[63,"Russell"]]},
+"Red Bull":{color:"#0600ef",drivers:[[1,"Verstappen"],[11,"Perez"]]},
+"Sauber":{color:"#52e252",drivers:[[77,"Bottas"],[24,"Zhou"]]},
+"Williams":{color:"#005aff",drivers:[[23,"Albon"],[2,"Sargeant"]]},
+"Andretti":{color:"#203c75",drivers:[[10,"DriverA"],[11,"DriverB"]]}
+}
+
+const correctOrder=["Verstappen","Hamilton","Leclerc","Norris","Russell","Piastri","Alonso","Sainz","Albon","Ocon"]
+
+function startGame(){
+ document.getElementById("session-screen").style.display="none"
+ document.getElementById("stage1").style.display="block"
+ buildStage1()
+}
+
+function buildStage1(){
+ const grid=document.getElementById("team-grid")
+ grid.innerHTML=""
+ const teams=Object.keys(teamData).sort()
+ for(let i=0;i<teams.length;i++){
+  const team=teams[i]
+  const div=document.createElement("div")
+  div.className="team-btn"
+  div.style.background=teamData[team].color
+
+  let entrants=""
+  for(let j=0;j<teamData[team].drivers.length;j++){
+   const d=teamData[team].drivers[j]
+   entrants+=d[0]+" "+d[1]
+   if(j<teamData[team].drivers.length-1) entrants+="<br>"
+  }
+
+  div.innerHTML=team+"<div class='entrants'>"+entrants+"</div>"
+
+  div.onclick=function(){
+   if(!div.classList.contains("selected") && selectedTeams.length>=maxTeams) return
+
+   div.classList.toggle("selected")
+   if(div.classList.contains("selected")){
+    selectedTeams.push(team)
+   }else{
+    selectedTeams=selectedTeams.filter(function(t){return t!==team})
+   }
+   document.getElementById("team-count").textContent=selectedTeams.length
+  }
+  grid.appendChild(div)
+ }
+}
+
+function submitStage1(){
+ if(selectedTeams.length!==maxTeams){alert("Select exactly 6 teams");return}
+ document.getElementById("stage1").style.display="none"
+ document.getElementById("stage2").style.display="block"
+ buildStage2()
+}
+
+function buildStage2(){
+ selectedTeams.sort()
+ const container=document.getElementById("stage2-container")
+ container.innerHTML=""
+ teamCars={}
+
+ for(let i=0;i<selectedTeams.length;i++){
+  const team=selectedTeams[i]
+  teamCars[team]=1
+  const row=document.createElement("div")
+  row.className="stage2-row"
+
+  const teamBox=document.createElement("div")
+  teamBox.className="team-btn"
+  teamBox.style.background=teamData[team].color
+  teamBox.textContent=team
+
+  const label1=document.createElement("div")
+  label1.textContent="1"
+  label1.style.textAlign="center"
+  label1.style.fontWeight="600"
+
+  const toggle=document.createElement("div")
+  toggle.className="switch"
+
+  const label2=document.createElement("div")
+  label2.textContent="2"
+  label2.style.textAlign="center"
+  label2.style.fontWeight="600"
+
+  toggle.onclick=function(){
+   let total=0
+   for(let k in teamCars){ total+=teamCars[k] }
+
+   if(teamCars[team]===1){
+    if(total>=10) return
+    teamCars[team]=2
+    toggle.classList.add("active")
+    const copy=teamBox.cloneNode(true)
+    row.appendChild(copy)
+   }else{
+    teamCars[team]=1
+    toggle.classList.remove("active")
+    if(row.children.length>5) row.removeChild(row.lastChild)
+   }
+   updateCarTotal()
+  }
+
+  row.appendChild(teamBox)
+  row.appendChild(label1)
+  row.appendChild(toggle)
+  row.appendChild(label2)
+  container.appendChild(row)
+ }
+ updateCarTotal()
+}
+
+function updateCarTotal(){
+ let total=0
+ for(let k in teamCars){ total+=teamCars[k] }
+ document.getElementById("car-total").textContent=total
+}
+
+function submitStage2(){
+ let total=0
+ for(let k in teamCars){ total+=teamCars[k] }
+ if(total!==10){alert("Must total 10 cars");return}
+ resolvedDrivers=[]
+ document.getElementById("stage2").style.display="none"
+ document.getElementById("stage3").style.display="block"
+ buildStage3()
+}
+
+function buildStage3(){
+ const container=document.getElementById("stage3-container")
+ container.innerHTML=""
+ const singleTeams=[]
+ for(let t in teamCars){ if(teamCars[t]===1) singleTeams.push(t) }
+ singleTeams.sort()
+
+ if(singleTeams.length===0){
+  document.getElementById("stage3-message").textContent="All teams have 2 drivers. Proceed to Stage 4."
+  return
+ }
+
+ document.getElementById("stage3-message").textContent="These teams have only one driver in the top 10. Select which one."
+
+ for(let i=0;i<singleTeams.length;i++){
+  const team=singleTeams[i]
+  const row=document.createElement("div")
+  row.className="driver-row"
+
+  const teamBox=document.createElement("div")
+  teamBox.className="team-btn"
+  teamBox.style.background=teamData[team].color
+  teamBox.textContent=team
+  row.appendChild(teamBox)
+
+  for(let j=0;j<teamData[team].drivers.length;j++){
+   const num=teamData[team].drivers[j][0]
+   const name=teamData[team].drivers[j][1]
+   const d=document.createElement("div")
+   d.className="driver"
+   d.style.background=teamData[team].color
+   d.textContent=num+" - "+name
+   d.onclick=function(){
+    const siblings=row.querySelectorAll(".driver")
+    for(let s=0;s<siblings.length;s++) siblings[s].classList.remove("selected")
+    d.classList.add("selected")
+   }
+   row.appendChild(d)
+  }
+  container.appendChild(row)
+ }
+}
+
+function submitStage3(){
+ for(let team in teamCars){
+  if(teamCars[team]===2){
+   for(let i=0;i<teamData[team].drivers.length;i++){
+    resolvedDrivers.push(teamData[team].drivers[i][1])
+   }
+  }
+ }
+
+ const selected=document.querySelectorAll(".driver.selected")
+ for(let i=0;i<selected.length;i++){
+  const name=selected[i].textContent.split(" - ")[1]
+  resolvedDrivers.push(name)
+ }
+
+ if(resolvedDrivers.length!==10){alert("Driver selection incomplete");return}
+
+ document.getElementById("stage3").style.display="none"
+ document.getElementById("stage4").style.display="block"
+ buildStage4()
+}
+
+function buildStage4(){
+ const posCol=document.getElementById("position-col")
+ const guessCol=document.getElementById("guess-col")
+ posCol.innerHTML=""
+ guessCol.innerHTML=""
+ currentGuess=Array(10).fill(null)
+
+ for(let i=0;i<10;i++){
+  const p=document.createElement("div")
+  p.className="guess-slot"
+  p.textContent=i+1
+  posCol.appendChild(p)
+
+  const slot=document.createElement("div")
+  slot.className="guess-slot"
+  slot.dataset.index=i
+  slot.ondragover=function(e){e.preventDefault()}
+  slot.ondrop=function(e){
+   e.preventDefault()
+   const name=e.dataTransfer.getData("text")
+   placeDriver(name,i)
+  }
+  guessCol.appendChild(slot)
+ }
+
+ const pool=document.getElementById("driver-pool")
+ pool.innerHTML=""
+
+ resolvedDrivers.sort(function(a,b){
+  return getDriverNumber(a)-getDriverNumber(b)
+ })
+
+ for(let i=0;i<resolvedDrivers.length;i++){
+  const name=resolvedDrivers[i]
+  const team=getDriverTeam(name)
+  const num=getDriverNumber(name)
+  const d=document.createElement("div")
+  d.className="driver"
+  d.draggable=true
+  d.style.background=teamData[team].color
+  d.textContent=num+" - "+name
+  d.ondragstart=function(e){e.dataTransfer.setData("text",name)}
+  d.onclick=function(){ placeDriver(name,currentGuess.indexOf(null)) }
+  pool.appendChild(d)
+ }
+}
+
+function getDriverTeam(name){
+ for(let t in teamData){
+  for(let i=0;i<teamData[t].drivers.length;i++){
+   if(teamData[t].drivers[i][1]===name) return t
+  }
+ }
+ return null
+}
+
+function getDriverNumber(name){
+ for(let t in teamData){
+  for(let i=0;i<teamData[t].drivers.length;i++){
+   if(teamData[t].drivers[i][1]===name) return teamData[t].drivers[i][0]
+  }
+ }
+ return 0
+}
+
+function placeDriver(name,index){
+ if(index<0 || lockedPositions[index]) return
+ if(currentGuess.indexOf(name)!==-1) return
+ currentGuess[index]=name
+ renderBoard()
+
+ const poolDrivers=document.querySelectorAll("#driver-pool .driver")
+ for(let i=0;i<poolDrivers.length;i++){
+  if(poolDrivers[i].textContent.indexOf(name)!==-1){
+   poolDrivers[i].remove()
+   break
+  }
+ }
+}
+
+function renderBoard(){
+ const slots=document.querySelectorAll("#guess-col .guess-slot")
+ for(let i=0;i<slots.length;i++){
+  if(currentGuess[i]){
+   const team=getDriverTeam(currentGuess[i])
+   const num=getDriverNumber(currentGuess[i])
+   slots[i].style.background=teamData[team].color
+   slots[i].textContent=num+" - "+currentGuess[i]
+  }else{
+   slots[i].textContent=""
+   slots[i].style.background="#2a2a38"
+  }
+ }
+}
+
+function submitGuess(){
+ const slots=document.querySelectorAll("#guess-col .guess-slot")
+ for(let i=0;i<10;i++){
+  if(currentGuess[i]===correctOrder[i]){
+   lockedPositions[i]=currentGuess[i]
+   slots[i].classList.add("correct")
+  }else{
+   slots[i].classList.add("wrong")
+  }
+ }
+ currentGuess=lockedPositions.slice()
+}
+</script>
+</body>
+</html>
