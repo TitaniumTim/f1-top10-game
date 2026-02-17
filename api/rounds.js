@@ -1,30 +1,22 @@
 // Returns all rounds for a given year
 // Example: /api/rounds?year=2023
-export default function handler(req, res) {
+export default async function handler(req, res) {
+  const { year } = req.query;
+  if (!year) return res.status(400).json({ error: "Year required" });
+
   try {
-    const { year } = req.query;
-    if (!year) return res.status(400).json({ error: "Year required" });
+    const response = await fetch(`https://api.openf1.org/v1/calendar/${year}.json`);
+    const data = await response.json();
 
-    // Example rounds data — replace with real F1 rounds if desired
-    const roundsByYear = {
-      2023: [
-        { number: 1, name: "Bahrain GP" },
-        { number: 2, name: "Saudi Arabia GP" },
-        { number: 3, name: "Australia GP" }
-      ],
-      2024: [
-        { number: 1, name: "Bahrain GP" },
-        { number: 2, name: "Saudi Arabia GP" }
-      ],
-      2025: [
-        { number: 1, name: "Bahrain GP" }
-      ]
-    };
+    // Map rounds into {number, name}
+    const rounds = data.map(event => ({
+      number: event.round,
+      name: event.raceName
+    }));
 
-    const rounds = roundsByYear[year] || [];
     res.status(200).json(rounds);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: "Error fetching rounds" });
   }
 }
