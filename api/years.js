@@ -1,10 +1,11 @@
 // /api/years.js
-const express = require('express');
-const router = express.Router();
-
-// Hardcoded for now – you can expand dynamically if needed
-router.get('/', (req, res) => {
-  res.json([2023, 2024, 2025]);
-});
-
-module.exports = router;
+export default function handler(req, res) {
+  try {
+    // List of years you want available
+    const years = [2023, 2024, 2025];
+    res.status(200).json(years);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({error: "Server error"});
+  }
+}
