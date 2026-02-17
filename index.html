@@ -3,73 +3,71 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>F1 Top 10 – API Integrated Prototype</title>
+<title>F1 Top 10 – Live</title>
 <style>
-/* ---------- GENERAL ---------- */
-body { margin:0; font-family: system-ui; background:#0f0f14; color:#fff; }
-header { padding:16px; background:#e10600; font-weight:700; text-align:center; }
-.container { padding:16px; max-width:1200px; margin:auto; }
-.card { background:#1c1c26; border-radius:8px; padding:16px; margin-bottom:16px; }
-h2 { margin-top:0; }
-button { padding:10px 14px; background:#e10600; border:none; border-radius:6px; color:#fff; font-weight:600; cursor:pointer; }
-.grid { display:grid; gap:8px; margin-bottom:16px; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); }
-.counter { margin-bottom:10px; font-weight:600; }
+body{margin:0;font-family:system-ui;background:#0f0f14;color:#fff}
+header{padding:16px;background:#e10600;font-weight:700;text-align:center}
+.container{padding:16px;max-width:1200px;margin:auto}
+.card{background:#1c1c26;border-radius:8px;padding:16px;margin-bottom:16px}
+h2{margin-top:0}
+button{padding:10px 14px;background:#e10600;border:none;border-radius:6px;color:#fff;font-weight:600;cursor:pointer}
+select{padding:8px;border-radius:6px;border:none;background:#222;color:#fff;margin-right:8px}
 
-/* ---------- TEAM BUTTONS ---------- */
-.team-btn { position:relative; padding:12px; border-radius:6px; text-align:center; font-weight:600; cursor:pointer; }
-.team-btn.selected::after { content:"✔"; position:absolute; top:6px; right:6px; background:#000; color:#fff; border-radius:50%; font-size:12px; padding:2px 6px; }
-.entrants { font-size:.85rem; margin-top:6px; opacity:.9; }
-
-/* ---------- STAGE 2 ---------- */
-.stage2-row { display:grid; grid-template-columns:200px 30px 60px 30px 200px; align-items:center; gap:10px; margin-bottom:10px; }
-.switch { width:60px; height:28px; background:#444; border-radius:20px; position:relative; cursor:pointer; }
-.switch::after { content:""; position:absolute; width:24px; height:24px; background:#fff; border-radius:50%; top:2px; left:2px; transition:.2s; }
-.switch.active::after { left:34px; }
-
-/* ---------- STAGE 3 ---------- */
-.driver-row { display:grid; grid-template-columns:200px 1fr 1fr; gap:8px; margin-bottom:8px; }
-.driver { padding:10px; border-radius:6px; text-align:center; cursor:pointer; font-weight:600; }
-.driver.selected { outline:3px solid #fff; }
-
-/* ---------- STAGE 4 ---------- */
-.stage4-layout { display:grid; grid-template-columns:40px 1fr; gap:12px; margin-bottom:12px; }
-.position-col { display:grid; grid-template-rows:repeat(10,50px); gap:6px; }
-.guess-col { display:grid; grid-template-rows:repeat(10,50px); gap:6px; }
-.guess-slot { background:#2a2a38; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:.75rem; }
-.guess-slot.correct { background:#00b200; }
-.guess-slot.wrong { background:#b20000; }
-.pool { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
-.locked { opacity:.5; }
+/* Stage styles (keep your previous polished CSS here) */
+.grid{display:grid;gap:8px;margin-bottom:16px}
+.counter{margin-bottom:10px;font-weight:600}
+/* TEAM BUTTON */
+.team-btn{position:relative;padding:12px;border-radius:6px;text-align:center;font-weight:600;cursor:pointer}
+.team-btn.selected::after{
+  content:"✔";
+  position:absolute;top:6px;right:8px;background:#000;color:#fff;border-radius:50%;
+  font-size:12px;padding:2px 6px;
+}
+/* ENTRANTS */
+.entrants{font-size:.85rem;margin-top:6px;opacity:.9}
+/* Stage 2 */
+.stage2-row{display:grid;grid-template-columns:200px 40px 120px 40px 200px;align-items:center;gap:10px;margin-bottom:10px}
+.switch{width:60px;height:28px;background:#444;border-radius:20px;position:relative;cursor:pointer}
+.switch::after{content:"";position:absolute;width:24px;height:24px;background:#fff;border-radius:50%;top:2px;left:2px;transition:.2s}
+.switch.active{background:#e10600}
+.switch.active::after{left:34px}
+/* Stage 3 */
+.driver-row{display:grid;grid-template-columns:200px 1fr 1fr;gap:8px;margin-bottom:8px}
+.driver{padding:10px;border-radius:6px;text-align:center;cursor:pointer;font-weight:600}
+.driver.selected{outline:3px solid #fff}
+/* Stage 4 */
+.stage4-layout{display:grid;grid-template-columns:40px 1fr;gap:12px}
+.position-col{display:grid;grid-template-rows:repeat(10,50px);gap:6px}
+.guess-col{display:grid;grid-template-rows:repeat(10,50px);gap:6px}
+.guess-slot{background:#2a2a38;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.75rem}
+.guess-slot.correct{background:#00b200}
+.guess-slot.wrong{background:#b20000}
+.pool{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.locked{opacity:.5}
 </style>
 </head>
 <body>
-<header>F1 TOP 10 – API Prototype</header>
+<header>F1 TOP 10 – Live</header>
 <div class="container">
 
-<!-- ---------- SESSION SELECT ---------- -->
+<!-- SESSION SELECT -->
 <div class="card" id="session-screen">
 <h2>Select Session</h2>
-<label>Year:
-  <select id="year-select"><option value="">Loading...</option></select>
-</label>
-<label>Round:
-  <select id="round-select"><option value="">Select year first</option></select>
-</label>
-<label>Session:
-  <select id="session-select"><option value="">Select year and round first</option></select>
-</label>
-<button id="start-btn">Start Game</button>
+<select id="year-select"><option>Loading...</option></select>
+<select id="round-select"><option>Loading...</option></select>
+<select id="session-select"><option>Loading...</option></select>
+<button id="start-game-btn">Start Game</button>
 </div>
 
-<!-- ---------- STAGE 1 ---------- -->
+<!-- Stage 1 -->
 <div class="card" id="stage1" style="display:none">
 <h2>Stage 1 – Select Teams</h2>
 <div class="counter">Selected: <span id="team-count">0</span>/6</div>
-<div class="grid" id="team-grid"></div>
+<div class="grid" id="team-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));"></div>
 <button onclick="submitStage1()">Submit Guess</button>
 </div>
 
-<!-- ---------- STAGE 2 ---------- -->
+<!-- Stage 2 -->
 <div class="card" id="stage2" style="display:none">
 <h2>Stage 2 – Cars per Team</h2>
 <div class="counter">Total Cars: <span id="car-total">0</span>/10</div>
@@ -77,15 +75,15 @@ button { padding:10px 14px; background:#e10600; border:none; border-radius:6px; 
 <button onclick="submitStage2()">Continue</button>
 </div>
 
-<!-- ---------- STAGE 3 ---------- -->
+<!-- Stage 3 -->
 <div class="card" id="stage3" style="display:none">
 <h2>Stage 3 – Single Driver Teams</h2>
 <p id="stage3-message"></p>
 <div id="stage3-container"></div>
-<button onclick="submitStage3()">Submit Guess</button>
+<button onclick="submitStage3()">Continue</button>
 </div>
 
-<!-- ---------- STAGE 4 ---------- -->
+<!-- Stage 4 -->
 <div class="card" id="stage4" style="display:none">
 <h2>Stage 4 – Order the Top 10</h2>
 <div class="pool" id="driver-pool"></div>
@@ -99,103 +97,66 @@ button { padding:10px 14px; background:#e10600; border:none; border-radius:6px; 
 </div>
 
 <script>
-/* ---------- GLOBALS ---------- */
-const maxTeams = 6;
-let selectedTeams = [];
-let teamCars = {};
-let resolvedDrivers = [];
-let lockedPositions = Array(10).fill(null);
-let currentGuess = Array(10).fill(null);
-let correctOrder = [];
-
-const teamData = {
-"Alpine":{color:"#0090FF",drivers:[]},
-"Aston Martin":{color:"#006F62",drivers:[]},
-"Ferrari":{color:"#DC0000",drivers:[]},
-"Haas":{color:"#B6BABD",drivers:[]},
-"McLaren":{color:"#FF8700",drivers:[]},
-"Mercedes":{color:"#00D2BE",drivers:[]},
-"Red Bull":{color:"#0600EF",drivers:[]},
-"Sauber":{color:"#52E252",drivers:[]},
-"Williams":{color:"#005AFF",drivers:[]},
-"Andretti":{color:"#203C75",drivers:[]}
-};
-
-/* ---------- SESSION SELECT API ---------- */
-async function fetchYears(){
+// ------------------- Dynamic session dropdowns -------------------
+async function fetchYears() {
   const res = await fetch('/api/years');
-  const data = await res.json();
+  const years = await res.json();
   const yearSelect = document.getElementById('year-select');
-  yearSelect.innerHTML='<option value="">Select Year</option>';
-  data.forEach(y => {
-    const opt=document.createElement('option');
-    opt.value=y; opt.textContent=y;
+  yearSelect.innerHTML = '';
+  years.forEach(y => {
+    const opt = document.createElement('option'); opt.value=y; opt.textContent=y;
     yearSelect.appendChild(opt);
   });
+  fetchRounds();
 }
 
-async function fetchRounds(year){
+async function fetchRounds() {
+  const year = document.getElementById('year-select').value;
   const res = await fetch(`/api/rounds?year=${year}`);
-  const data = await res.json();
-  const roundSelect=document.getElementById('round-select');
-  roundSelect.innerHTML='<option value="">Select Round</option>';
-  data.forEach(r => {
-    const opt=document.createElement('option');
-    opt.value=r.number; opt.textContent=r.name;
+  const rounds = await res.json();
+  const roundSelect = document.getElementById('round-select');
+  roundSelect.innerHTML='';
+  rounds.forEach(r => {
+    const opt=document.createElement('option'); opt.value=r.number; opt.textContent=r.name;
     roundSelect.appendChild(opt);
   });
+  fetchSessions();
 }
 
-async function fetchSessions(year,round){
-  const res = await fetch(`/api/sessions?year=${year}&round=${round}`);
-  const data = await res.json();
+async function fetchSessions() {
+  const year=document.getElementById('year-select').value;
+  const round=document.getElementById('round-select').value;
+  const res=await fetch(`/api/sessions?year=${year}&round=${round}`);
+  const sessions=await res.json();
   const sessionSelect=document.getElementById('session-select');
-  sessionSelect.innerHTML='<option value="">Select Session</option>';
-  data.forEach(s=>{
-    const opt=document.createElement('option');
-    opt.value=s; opt.textContent=s;
+  sessionSelect.innerHTML='';
+  sessions.forEach(s=>{
+    const opt=document.createElement('option'); opt.value=s; opt.textContent=s;
     sessionSelect.appendChild(opt);
   });
 }
 
-/* Dropdown listeners */
-document.getElementById('year-select').addEventListener('change',e=>{
-  const year=e.target.value; if(year) fetchRounds(year);
-});
-document.getElementById('round-select').addEventListener('change',e=>{
-  const year=document.getElementById('year-select').value;
-  const round=e.target.value; if(year && round) fetchSessions(year,round);
-});
+// Update rounds & sessions when year/round changes
+document.getElementById('year-select').addEventListener('change',fetchRounds);
+document.getElementById('round-select').addEventListener('change',fetchSessions);
 
-/* Start game */
-document.getElementById('start-btn').addEventListener('click', async ()=>{
+document.getElementById('start-game-btn').addEventListener('click',async()=>{
   const year=document.getElementById('year-select').value;
   const round=document.getElementById('round-select').value;
   const session=document.getElementById('session-select').value;
-  if(!year || !round || !session){ alert('Select year, round, and session'); return; }
-
-  const res = await fetch(`/api/session?year=${year}&round=${round}&session=${session}`);
-  const data = await res.json();
-
-  if(!data.top10 || data.top10.length!==10){ alert('No top 10 data for this session'); return; }
-
-  correctOrder = data.top10.map(d=>d.driver);
-  // Clear previous driver arrays
-  Object.keys(teamData).forEach(t=>teamData[t].drivers=[]);
-  data.top10.forEach(d=>{
-    if(teamData[d.team]) teamData[d.team].drivers.push([d.number,d.driver]);
-  });
-
-  document.getElementById('session-screen').style.display='none';
-  document.getElementById('stage1').style.display='block';
-  buildStage1();
+  // Fetch top 10 from backend
+  const res=await fetch(`/api/session?year=${year}&round=${round}&session=${session}`);
+  const data=await res.json();
+  window.top10=data.top10.map(d=>({driver:d.driver,team:d.team,number:d.number}));
+  startGame();
 });
 
-/* ---------- Stage 1 – 4 functions ---------- */
-/* Copy all the existing buildStage1, submitStage1, buildStage2, submitStage2, buildStage3, submitStage3, buildStage4, placeDriver, renderBoard, submitGuess functions here from your polished prototype */
+fetchYears();
+
+// ------------------- Existing Stage Logic -------------------
+// Keep all your Stage 1-4 functions here, just replace 'correctOrder' array with:
+// const correctOrder = window.top10.map(d => d.driver);
 
 </script>
-
-<script>fetchYears();</script>
 </body>
 </html>
