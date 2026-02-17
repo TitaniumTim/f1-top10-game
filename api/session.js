@@ -1,29 +1,27 @@
-// /api/session.js
-const express = require('express');
-const router = express.Router();
-const fetch = require('node-fetch');
-
-router.get('/', async (req, res) => {
-  const {year, round, session} = req.query;
-  if (!year || !round || !session) return res.status(400).json({error:'Year, round, session required'});
-
+// Returns the top 10 for a specific session
+// Example: /api/session?year=2023&round=1&session=Race
+export default function handler(req, res) {
   try {
-    // Example OpenF1 API call: replace with actual endpoint
-    const apiRes = await fetch(`https://api.openf1.org/${year}/round/${round}/${session}`);
-    const data = await apiRes.json();
+    const { year, round, session } = req.query;
+    if (!year || !round || !session) return res.status(400).json({ error: "Year, round and session required" });
 
-    // Extract the top 10 drivers: [{driver:"Hamilton", team:"Mercedes", number:44}, ...]
-    const top10 = data.results.slice(0,10).map(d => ({
-      driver: d.driver,
-      team: d.constructor,
-      number: d.number
-    }));
+    // Dummy top 10 data for testing — replace with real F1 API integration later
+    const top10 = [
+      { driver: "Verstappen", team: "Red Bull", number: 1 },
+      { driver: "Hamilton", team: "Mercedes", number: 44 },
+      { driver: "Leclerc", team: "Ferrari", number: 16 },
+      { driver: "Norris", team: "McLaren", number: 4 },
+      { driver: "Russell", team: "Mercedes", number: 63 },
+      { driver: "Piastri", team: "McLaren", number: 81 },
+      { driver: "Alonso", team: "Aston Martin", number: 14 },
+      { driver: "Sainz", team: "Ferrari", number: 55 },
+      { driver: "Albon", team: "Williams", number: 23 },
+      { driver: "Ocon", team: "Alpine", number: 31 }
+    ];
 
-    res.json({top10});
+    res.status(200).json({ top10 });
   } catch (err) {
     console.error(err);
-    res.status(500).json({error:'Failed to fetch session results'});
+    res.status(500).json({ error: "Server error" });
   }
-});
-
-module.exports = router;
+}
