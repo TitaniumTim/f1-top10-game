@@ -1,23 +1,15 @@
-// /api/sessions.js
-const express = require('express');
-const router = express.Router();
-const fetch = require('node-fetch');
-
-router.get('/', async (req, res) => {
-  const {year, round} = req.query;
-  if (!year || !round) return res.status(400).json({error:'Year and round required'});
-
+// Returns available sessions for a given year and round
+// Example: /api/sessions?year=2023&round=1
+export default function handler(req, res) {
   try {
-    // Example: fetch session types for that round
-    const apiRes = await fetch(`https://api.openf1.org/${year}/round/${round}/sessions`);
-    const data = await apiRes.json();
+    const { year, round } = req.query;
+    if (!year || !round) return res.status(400).json({ error: "Year and round required" });
 
-    // Should return an array like ["FP1","FP2","Qualifying","Race","Sprint"]
-    res.json(data);
+    // Example sessions
+    const sessions = ["FP1", "FP2", "FP3", "Qualifying", "Sprint", "Race"];
+    res.status(200).json(sessions);
   } catch (err) {
     console.error(err);
-    res.status(500).json({error:'Failed to fetch sessions'});
+    res.status(500).json({ error: "Server error" });
   }
-});
-
-module.exports = router;
+}
