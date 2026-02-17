@@ -1,24 +1,30 @@
-// /api/rounds.js
-const express = require('express');
-const router = express.Router();
-const fetch = require('node-fetch');
-
-router.get('/', async (req, res) => {
-  const year = req.query.year;
-  if (!year) return res.status(400).json({error: 'Year required'});
-
+// Returns all rounds for a given year
+// Example: /api/rounds?year=2023
+export default function handler(req, res) {
   try {
-    // Example OpenF1 API: Replace with actual endpoint
-    const apiRes = await fetch(`https://api.openf1.org/${year}/rounds`);
-    const data = await apiRes.json();
+    const { year } = req.query;
+    if (!year) return res.status(400).json({ error: "Year required" });
 
-    // Ensure format: [{number:1, name:"Bahrain GP"}, ...]
-    const rounds = data.map(r => ({number: r.round, name: r.name}));
-    res.json(rounds);
+    // Example rounds data — replace with real F1 rounds if desired
+    const roundsByYear = {
+      2023: [
+        { number: 1, name: "Bahrain GP" },
+        { number: 2, name: "Saudi Arabia GP" },
+        { number: 3, name: "Australia GP" }
+      ],
+      2024: [
+        { number: 1, name: "Bahrain GP" },
+        { number: 2, name: "Saudi Arabia GP" }
+      ],
+      2025: [
+        { number: 1, name: "Bahrain GP" }
+      ]
+    };
+
+    const rounds = roundsByYear[year] || [];
+    res.status(200).json(rounds);
   } catch (err) {
     console.error(err);
-    res.status(500).json({error:'Failed to fetch rounds'});
+    res.status(500).json({ error: "Server error" });
   }
-});
-
-module.exports = router;
+}
