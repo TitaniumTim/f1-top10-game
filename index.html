@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>F1 Top 10 – Prototype v3</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>F1 Top 10 – Real Data</title>
 <style>
 body{margin:0;font-family:system-ui;background:#0f0f14;color:#fff}
 header{padding:16px;background:#e10600;font-weight:700}
@@ -60,21 +60,24 @@ position:absolute;width:24px;height:24px;background:#fff;border-radius:50%;top:2
 </style>
 </head>
 <body>
-<header>F1 TOP 10 – Prototype v3</header>
+<header>F1 TOP 10 – Real Data</header>
 <div class="container">
 
 <!-- SESSION SELECT -->
 <div class="card" id="session-screen">
 <h2>Select Session</h2>
-<button onclick="startGame()">British GP – FP1</button>
+<label>Year: <select id="year-select"></select></label>
+<label>Round: <select id="round-select"></select></label>
+<label>Session: <select id="session-select"></select></label>
+<button onclick="startGame()">Start Game</button>
 </div>
 
 <!-- STAGE 1 -->
 <div class="card" id="stage1" style="display:none">
 <h2>Stage 1 – Select Teams</h2>
-<div class="counter">Selected: <span id="team-count">0</span>/6</div>
+<div class="counter">Selected: <span id="team-count">0</span>/<span id="max-teams">0</span></div>
 <div class="grid" id="team-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));"></div>
-<button onclick="submitStage1()">Continue</button>
+<button onclick="submitStage1()">Submit Guess</button>
 </div>
 
 <!-- STAGE 2 -->
@@ -107,319 +110,279 @@ position:absolute;width:24px;height:24px;background:#fff;border-radius:50%;top:2
 </div>
 
 <script>
-const maxTeams=6
-let selectedTeams=[]
-let teamCars={}
-let resolvedDrivers=[]
-let lockedPositions=Array(10).fill(null)
-let currentGuess=Array(10).fill(null)
+const yearSelect = document.getElementById("year-select");
+const roundSelect = document.getElementById("round-select");
+const sessionSelect = document.getElementById("session-select");
 
-const teamData={
-"Alpine":{color:"#0090ff",drivers:[[31,"Ocon"],[2,"Gasly"]]},
-"Aston Martin":{color:"#006f62",drivers:[[14,"Alonso"],[18,"Stroll"]]},
-"Ferrari":{color:"#dc0000",drivers:[[16,"Leclerc"],[55,"Sainz"]]},
-"Haas":{color:"#b6babd",drivers:[[20,"Magnussen"],[27,"Hulkenberg"]]},
-"McLaren":{color:"#ff8700",drivers:[[4,"Norris"],[81,"Piastri"]]},
-"Mercedes":{color:"#00d2be",drivers:[[44,"Hamilton"],[63,"Russell"]]},
-"Red Bull":{color:"#0600ef",drivers:[[1,"Verstappen"],[11,"Perez"]]},
-"Sauber":{color:"#52e252",drivers:[[77,"Bottas"],[24,"Zhou"]]},
-"Williams":{color:"#005aff",drivers:[[23,"Albon"],[2,"Sargeant"]]},
-"Andretti":{color:"#203c75",drivers:[[10,"DriverA"],[11,"DriverB"]]}
+let teamData = {};
+let correctOrder = [];
+let maxTeams = 6;
+let selectedTeams = [];
+let teamCars = {};
+let resolvedDrivers = [];
+let lockedPositions = Array(10).fill(null);
+let currentGuess = Array(10).fill(null);
+
+// Populate Years 2023–2025
+for(let y=2023;y<=2025;y++){
+  const opt = document.createElement("option");
+  opt.value = y;
+  opt.textContent = y;
+  yearSelect.appendChild(opt);
+}
+yearSelect.onchange = async () => {
+  const year = yearSelect.value;
+  const res = await fetch(`/api/sessions?year=${year}`);
+  const data = await res.json();
+  roundSelect.innerHTML = "";
+  data.forEach(r => {
+    const opt = document.createElement("option");
+    opt.value = r.meeting_key;
+    opt.textContent = r.event_name;
+    opt.dataset.sessions = JSON.stringify(r.sessions);
+    roundSelect.appendChild(opt);
+  });
+  roundSelect.onchange();
+};
+roundSelect.onchange = () => {
+  const selected = roundSelect.selectedOptions[0];
+  const sessions = JSON.parse(selected.dataset.sessions);
+  sessionSelect.innerHTML = "";
+  sessions.forEach(s => {
+    const opt = document.createElement("option");
+    opt.value = s.session_key;
+    opt.textContent = s.session_name;
+    sessionSelect.appendChild(opt);
+  });
+};
+yearSelect.onchange(); // initial load
+
+async function startGame(){
+  const sessionKey = sessionSelect.value;
+  const res = await fetch(`/api/session_results?session_key=${sessionKey}`);
+  const top10 = await res.json();
+
+  // Build teamData dynamically from session results
+  teamData = {};
+  top10.forEach(d=>{
+    if(!teamData[d.team]) teamData[d.team]={color:'#'+Math.floor(Math.random()*16777215).toString(16), drivers:[]};
+    teamData[d.team].drivers.push([d.number,d.driver]);
+  });
+
+  correctOrder = top10.map(d=>d.driver);
+  maxTeams = Object.keys(teamData).length;
+  document.getElementById("max-teams").textContent = maxTeams;
+
+  document.getElementById("session-screen").style.display="none";
+  document.getElementById("stage1").style.display="block";
+  buildStage1();
 }
 
-const correctOrder=["Verstappen","Hamilton","Leclerc","Norris","Russell","Piastri","Alonso","Sainz","Albon","Ocon"]
-
-function startGame(){
- document.getElementById("session-screen").style.display="none"
- document.getElementById("stage1").style.display="block"
- buildStage1()
-}
-
+// ----------- Stage 1 ----------
 function buildStage1(){
- const grid=document.getElementById("team-grid")
- grid.innerHTML=""
- const teams=Object.keys(teamData).sort()
- for(let i=0;i<teams.length;i++){
-  const team=teams[i]
-  const div=document.createElement("div")
-  div.className="team-btn"
-  div.style.background=teamData[team].color
-
-  let entrants=""
-  for(let j=0;j<teamData[team].drivers.length;j++){
-   const d=teamData[team].drivers[j]
-   entrants+=d[0]+" "+d[1]
-   if(j<teamData[team].drivers.length-1) entrants+="<br>"
-  }
-
-  div.innerHTML=team+"<div class='entrants'>"+entrants+"</div>"
-
-  div.onclick=function(){
-   if(!div.classList.contains("selected") && selectedTeams.length>=maxTeams) return
-
-   div.classList.toggle("selected")
-   if(div.classList.contains("selected")){
-    selectedTeams.push(team)
-   }else{
-    selectedTeams=selectedTeams.filter(function(t){return t!==team})
-   }
-   document.getElementById("team-count").textContent=selectedTeams.length
-  }
-  grid.appendChild(div)
- }
+ const grid=document.getElementById("team-grid");
+ grid.innerHTML="";
+ selectedTeams=[];
+ document.getElementById("team-count").textContent=0;
+ const teams=Object.keys(teamData).sort();
+ teams.forEach(team=>{
+   const div=document.createElement("div");
+   div.className="team-btn";
+   div.style.background=teamData[team].color;
+   let entrants="";
+   teamData[team].drivers.forEach(d=>{
+     entrants+=d[0]+" "+d[1]+"<br>";
+   });
+   div.innerHTML=team+"<div class='entrants'>"+entrants+"</div>";
+   div.onclick=function(){
+     if(!div.classList.contains("selected") && selectedTeams.length>=maxTeams) return;
+     div.classList.toggle("selected");
+     if(div.classList.contains("selected")){
+       selectedTeams.push(team);
+     }else{
+       selectedTeams = selectedTeams.filter(t=>t!==team);
+     }
+     document.getElementById("team-count").textContent=selectedTeams.length;
+   };
+   grid.appendChild(div);
+ });
 }
 
 function submitStage1(){
- if(selectedTeams.length!==maxTeams){alert("Select exactly 6 teams");return}
- document.getElementById("stage1").style.display="none"
- document.getElementById("stage2").style.display="block"
- buildStage2()
+  if(selectedTeams.length!==maxTeams){alert("Select all teams"); return;}
+  document.getElementById("stage1").style.display="none";
+  document.getElementById("stage2").style.display="block";
+  buildStage2();
 }
 
+// ----------- Stage 2 ----------
 function buildStage2(){
- selectedTeams.sort()
- const container=document.getElementById("stage2-container")
- container.innerHTML=""
- teamCars={}
+  selectedTeams.sort();
+  const container=document.getElementById("stage2-container");
+  container.innerHTML="";
+  teamCars={};
+  selectedTeams.forEach(team=>{
+    teamCars[team]=1;
+    const row=document.createElement("div");
+    row.className="stage2-row";
+    const teamBox=document.createElement("div");
+    teamBox.className="team-btn";
+    teamBox.style.background=teamData[team].color;
+    teamBox.textContent=team;
+    const label1=document.createElement("div"); label1.textContent="1"; label1.style.textAlign="center"; label1.style.fontWeight="600";
+    const toggle=document.createElement("div"); toggle.className="switch";
+    const label2=document.createElement("div"); label2.textContent="2"; label2.style.textAlign="center"; label2.style.fontWeight="600";
 
- for(let i=0;i<selectedTeams.length;i++){
-  const team=selectedTeams[i]
-  teamCars[team]=1
-  const row=document.createElement("div")
-  row.className="stage2-row"
+    toggle.onclick=function(){
+      let total=Object.values(teamCars).reduce((a,b)=>a+b,0);
+      if(teamCars[team]===1){
+        if(total>=10) return;
+        teamCars[team]=2;
+        toggle.classList.add("active");
+        const copy=teamBox.cloneNode(true);
+        row.appendChild(copy);
+      }else{
+        teamCars[team]=1;
+        toggle.classList.remove("active");
+        if(row.children.length>5) row.removeChild(row.lastChild);
+      }
+      document.getElementById("car-total").textContent=Object.values(teamCars).reduce((a,b)=>a+b,0);
+    };
 
-  const teamBox=document.createElement("div")
-  teamBox.className="team-btn"
-  teamBox.style.background=teamData[team].color
-  teamBox.textContent=team
-
-  const label1=document.createElement("div")
-  label1.textContent="1"
-  label1.style.textAlign="center"
-  label1.style.fontWeight="600"
-
-  const toggle=document.createElement("div")
-  toggle.className="switch"
-
-  const label2=document.createElement("div")
-  label2.textContent="2"
-  label2.style.textAlign="center"
-  label2.style.fontWeight="600"
-
-  toggle.onclick=function(){
-   let total=0
-   for(let k in teamCars){ total+=teamCars[k] }
-
-   if(teamCars[team]===1){
-    if(total>=10) return
-    teamCars[team]=2
-    toggle.classList.add("active")
-    const copy=teamBox.cloneNode(true)
-    row.appendChild(copy)
-   }else{
-    teamCars[team]=1
-    toggle.classList.remove("active")
-    if(row.children.length>5) row.removeChild(row.lastChild)
-   }
-   updateCarTotal()
-  }
-
-  row.appendChild(teamBox)
-  row.appendChild(label1)
-  row.appendChild(toggle)
-  row.appendChild(label2)
-  container.appendChild(row)
- }
- updateCarTotal()
-}
-
-function updateCarTotal(){
- let total=0
- for(let k in teamCars){ total+=teamCars[k] }
- document.getElementById("car-total").textContent=total
+    row.appendChild(teamBox);
+    row.appendChild(label1);
+    row.appendChild(toggle);
+    row.appendChild(label2);
+    container.appendChild(row);
+  });
+  document.getElementById("car-total").textContent=Object.values(teamCars).reduce((a,b)=>a+b,0);
 }
 
 function submitStage2(){
- let total=0
- for(let k in teamCars){ total+=teamCars[k] }
- if(total!==10){alert("Must total 10 cars");return}
- resolvedDrivers=[]
- document.getElementById("stage2").style.display="none"
- document.getElementById("stage3").style.display="block"
- buildStage3()
+  const total = Object.values(teamCars).reduce((a,b)=>a+b,0);
+  if(total!==10){alert("Must total 10 cars");return;}
+  resolvedDrivers=[];
+  document.getElementById("stage2").style.display="none";
+  document.getElementById("stage3").style.display="block";
+  buildStage3();
 }
 
+// ----------- Stage 3 ----------
 function buildStage3(){
- const container=document.getElementById("stage3-container")
- container.innerHTML=""
- const singleTeams=[]
- for(let t in teamCars){ if(teamCars[t]===1) singleTeams.push(t) }
- singleTeams.sort()
-
- if(singleTeams.length===0){
-  document.getElementById("stage3-message").textContent="All teams have 2 drivers. Proceed to Stage 4."
-  return
- }
-
- document.getElementById("stage3-message").textContent="These teams have only one driver in the top 10. Select which one."
-
- for(let i=0;i<singleTeams.length;i++){
-  const team=singleTeams[i]
-  const row=document.createElement("div")
-  row.className="driver-row"
-
-  const teamBox=document.createElement("div")
-  teamBox.className="team-btn"
-  teamBox.style.background=teamData[team].color
-  teamBox.textContent=team
-  row.appendChild(teamBox)
-
-  for(let j=0;j<teamData[team].drivers.length;j++){
-   const num=teamData[team].drivers[j][0]
-   const name=teamData[team].drivers[j][1]
-   const d=document.createElement("div")
-   d.className="driver"
-   d.style.background=teamData[team].color
-   d.textContent=num+" - "+name
-   d.onclick=function(){
-    const siblings=row.querySelectorAll(".driver")
-    for(let s=0;s<siblings.length;s++) siblings[s].classList.remove("selected")
-    d.classList.add("selected")
-   }
-   row.appendChild(d)
+  const container=document.getElementById("stage3-container");
+  container.innerHTML="";
+  const singleTeams=[];
+  for(let t in teamCars){ if(teamCars[t]===1) singleTeams.push(t);}
+  singleTeams.sort();
+  if(singleTeams.length===0){
+    document.getElementById("stage3-message").textContent="All teams have 2 drivers. Proceed to Stage 4.";
+    return;
   }
-  container.appendChild(row)
- }
+  document.getElementById("stage3-message").textContent="These teams have only one driver in the top 10. Select which one.";
+  singleTeams.forEach(team=>{
+    const row=document.createElement("div"); row.className="driver-row";
+    const teamBox=document.createElement("div"); teamBox.className="team-btn"; teamBox.style.background=teamData[team].color; teamBox.textContent=team;
+    row.appendChild(teamBox);
+    teamData[team].drivers.forEach(d=>{
+      const drv=document.createElement("div"); drv.className="driver"; drv.style.background=teamData[team].color; drv.textContent=d[0]+" - "+d[1];
+      drv.onclick=function(){
+        const siblings=row.querySelectorAll(".driver"); siblings.forEach(s=>s.classList.remove("selected"));
+        drv.classList.add("selected");
+      }
+      row.appendChild(drv);
+    });
+    container.appendChild(row);
+  });
 }
 
 function submitStage3(){
- for(let team in teamCars){
-  if(teamCars[team]===2){
-   for(let i=0;i<teamData[team].drivers.length;i++){
-    resolvedDrivers.push(teamData[team].drivers[i][1])
-   }
+  for(let team in teamCars){
+    if(teamCars[team]===2){
+      teamData[team].drivers.forEach(d=>resolvedDrivers.push(d[1]));
+    }
   }
- }
-
- const selected=document.querySelectorAll(".driver.selected")
- for(let i=0;i<selected.length;i++){
-  const name=selected[i].textContent.split(" - ")[1]
-  resolvedDrivers.push(name)
- }
-
- if(resolvedDrivers.length!==10){alert("Driver selection incomplete");return}
-
- document.getElementById("stage3").style.display="none"
- document.getElementById("stage4").style.display="block"
- buildStage4()
+  const selected=document.querySelectorAll(".driver.selected");
+  selected.forEach(d=>resolvedDrivers.push(d.textContent.split(" - ")[1]));
+  if(resolvedDrivers.length!==10){alert("Driver selection incomplete");return;}
+  document.getElementById("stage3").style.display="none";
+  document.getElementById("stage4").style.display="block";
+  buildStage4();
 }
 
+// ----------- Stage 4 ----------
 function buildStage4(){
- const posCol=document.getElementById("position-col")
- const guessCol=document.getElementById("guess-col")
- posCol.innerHTML=""
- guessCol.innerHTML=""
- currentGuess=Array(10).fill(null)
+  const posCol=document.getElementById("position-col");
+  const guessCol=document.getElementById("guess-col");
+  posCol.innerHTML=""; guessCol.innerHTML="";
+  currentGuess=Array(10).fill(null);
+  lockedPositions=Array(10).fill(null);
 
- for(let i=0;i<10;i++){
-  const p=document.createElement("div")
-  p.className="guess-slot"
-  p.textContent=i+1
-  posCol.appendChild(p)
-
-  const slot=document.createElement("div")
-  slot.className="guess-slot"
-  slot.dataset.index=i
-  slot.ondragover=function(e){e.preventDefault()}
-  slot.ondrop=function(e){
-   e.preventDefault()
-   const name=e.dataTransfer.getData("text")
-   placeDriver(name,i)
+  for(let i=0;i<10;i++){
+    const p=document.createElement("div"); p.className="guess-slot"; p.textContent=i+1; posCol.appendChild(p);
+    const slot=document.createElement("div"); slot.className="guess-slot"; slot.dataset.index=i;
+    slot.ondragover=e=>e.preventDefault();
+    slot.ondrop=e=>{e.preventDefault(); const name=e.dataTransfer.getData("text"); placeDriver(name,i);};
+    guessCol.appendChild(slot);
   }
-  guessCol.appendChild(slot)
- }
 
- const pool=document.getElementById("driver-pool")
- pool.innerHTML=""
-
- resolvedDrivers.sort(function(a,b){
-  return getDriverNumber(a)-getDriverNumber(b)
- })
-
- for(let i=0;i<resolvedDrivers.length;i++){
-  const name=resolvedDrivers[i]
-  const team=getDriverTeam(name)
-  const num=getDriverNumber(name)
-  const d=document.createElement("div")
-  d.className="driver"
-  d.draggable=true
-  d.style.background=teamData[team].color
-  d.textContent=num+" - "+name
-  d.ondragstart=function(e){e.dataTransfer.setData("text",name)}
-  d.onclick=function(){ placeDriver(name,currentGuess.indexOf(null)) }
-  pool.appendChild(d)
- }
+  const pool=document.getElementById("driver-pool"); pool.innerHTML="";
+  resolvedDrivers.sort((a,b)=>getDriverNumber(a)-getDriverNumber(b));
+  resolvedDrivers.forEach(name=>{
+    const team=getDriverTeam(name); const num=getDriverNumber(name);
+    const d=document.createElement("div"); d.className="driver"; d.draggable=true; d.style.background=teamData[team].color;
+    d.textContent=num+" - "+name;
+    d.ondragstart=e=>e.dataTransfer.setData("text",name);
+    d.onclick=()=>placeDriver(name,currentGuess.indexOf(null));
+    pool.appendChild(d);
+  });
 }
 
 function getDriverTeam(name){
- for(let t in teamData){
-  for(let i=0;i<teamData[t].drivers.length;i++){
-   if(teamData[t].drivers[i][1]===name) return t
+  for(let t in teamData){
+    if(teamData[t].drivers.find(d=>d[1]===name)) return t;
   }
- }
- return null
+  return null;
 }
-
 function getDriverNumber(name){
- for(let t in teamData){
-  for(let i=0;i<teamData[t].drivers.length;i++){
-   if(teamData[t].drivers[i][1]===name) return teamData[t].drivers[i][0]
+  for(let t in teamData){
+    const drv=teamData[t].drivers.find(d=>d[1]===name);
+    if(drv) return drv[0];
   }
- }
- return 0
+  return 0;
 }
 
 function placeDriver(name,index){
- if(index<0 || lockedPositions[index]) return
- if(currentGuess.indexOf(name)!==-1) return
- currentGuess[index]=name
- renderBoard()
-
- const poolDrivers=document.querySelectorAll("#driver-pool .driver")
- for(let i=0;i<poolDrivers.length;i++){
-  if(poolDrivers[i].textContent.indexOf(name)!==-1){
-   poolDrivers[i].remove()
-   break
-  }
- }
+  if(index<0 || lockedPositions[index] || currentGuess.indexOf(name)!==-1) return;
+  currentGuess[index]=name;
+  renderBoard();
+  const poolDrivers=document.querySelectorAll("#driver-pool .driver");
+  poolDrivers.forEach(d=>{if(d.textContent.includes(name)) d.remove();});
 }
 
 function renderBoard(){
- const slots=document.querySelectorAll("#guess-col .guess-slot")
- for(let i=0;i<slots.length;i++){
-  if(currentGuess[i]){
-   const team=getDriverTeam(currentGuess[i])
-   const num=getDriverNumber(currentGuess[i])
-   slots[i].style.background=teamData[team].color
-   slots[i].textContent=num+" - "+currentGuess[i]
-  }else{
-   slots[i].textContent=""
-   slots[i].style.background="#2a2a38"
-  }
- }
+  const slots=document.querySelectorAll("#guess-col .guess-slot");
+  slots.forEach((s,i)=>{
+    if(currentGuess[i]){
+      const team=getDriverTeam(currentGuess[i]);
+      const num=getDriverNumber(currentGuess[i]);
+      s.style.background=teamData[team].color; s.textContent=num+" - "+currentGuess[i];
+    }else{
+      s.style.background="#2a2a38"; s.textContent="";
+    }
+  });
 }
 
 function submitGuess(){
- const slots=document.querySelectorAll("#guess-col .guess-slot")
- for(let i=0;i<10;i++){
-  if(currentGuess[i]===correctOrder[i]){
-   lockedPositions[i]=currentGuess[i]
-   slots[i].classList.add("correct")
-  }else{
-   slots[i].classList.add("wrong")
+  const slots=document.querySelectorAll("#guess-col .guess-slot");
+  for(let i=0;i<10;i++){
+    if(currentGuess[i]===correctOrder[i]){
+      lockedPositions[i]=currentGuess[i];
+      slots[i].classList.add("correct");
+    }else{
+      slots[i].classList.add("wrong");
+    }
   }
- }
- currentGuess=lockedPositions.slice()
+  currentGuess=lockedPositions.slice();
 }
 </script>
 </body>
