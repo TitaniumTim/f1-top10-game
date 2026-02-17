@@ -1,18 +1,47 @@
+// api/sessions.js
 export default async function handler(req, res) {
-  const { year, round, type } = req.query;
+  const { year } = req.query;
 
-  const response = await fetch(`https://api.openf1.org/v1/results?year=${year}&round=${round}`);
-  const data = await response.json();
+  if (!year) {
+    return res.status(400).json({ error: "Missing 'year' query parameter" });
+  }
 
-  const top10 = data
-    .sort((a, b) => a.position - b.position)
-    .slice(0, 10)
-    .map(d => ({
-      position: d.position,
-      driver: d.driver_full_name,
-      number: d.driver_number,
-      team: d.team_name
-    }));
+  try {
+    // Get all sessions for the year
+    const raw = await fetch(`https://api.openf1.org/v1/sessions?year=${year}`);
+    const sessions = await raw.json();
 
-  res.status(200).json(top10);
+    // Group by meeting_key (round / GP)
+    const grouped = {};
+    sessions.forEach(s => {
+      const event = s.circuit_short_name || s.location || "Unknown GP";
+      if (!grouped[s.meeting_key]) {
+        grouped[s.meeting_key] = {
+          meeting_key: s.meeting_key,
+          event_name: event,
+          sessions: []
+        };
+      }
+      grouped[s.meeting_key].sessions.push({
+        session_key: s.session_key,
+        session_name: s.session_name,
+        session_type: s.session_type,
+        date: s.date_start
+      });
+    });
+
+    // Sort sessions per GP by date
+    const sorted = Object.values(grouped).map(event => {
+      event.sessions.sort((a, b) => new Date(a.date) - new Date(b.date));
+      return event;
+    });
+
+    // Sort GPs by meeting_key (round number order)
+    sorted.sort((a, b) => a.meeting_key - b.meeting_key);
+
+    res.status(200).json(sorted);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch sessions" });
+  }
 }
