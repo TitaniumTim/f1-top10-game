@@ -9,14 +9,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await fetch(`https://f1api.dev/api/${year}`);
+    const response = await fetch(`https://api.openf1.org/v1/meetings?year=${year}`);
     const data = await response.json();
 
-    const rounds = data.races.map(race => ({
-      round: race.round,
-      raceId: race.raceId,
-      raceName: race.raceName,
-      url: race.url,
+    const rounds = data.map(meeting => ({
+      meeting_key: meeting.meeting_key,
+      raceName: meeting.race_name,
+      circuitName: meeting.circuit_name,
+      country: meeting.country,
+      city: meeting.city,
+      date: meeting.start_date,
     }));
 
     res.status(200).json(rounds);
