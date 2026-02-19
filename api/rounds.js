@@ -1,21 +1,27 @@
+// api/rounds.js
+import fetch from 'node-fetch';
+
 export default async function handler(req, res) {
   const { year } = req.query;
-  if (!year) return res.status(400).json({ error: "Year required" });
+
+  if (!year) {
+    return res.status(400).json({ error: 'Year is required' });
+  }
 
   try {
-    const response = await fetch(`https://f1api.dev/api/v1/races/${year}`);
+    const response = await fetch(`https://f1api.dev/api/${year}`);
     const data = await response.json();
 
-    // map to round array
-    const rounds = data.map(r => ({
-      number: r.round,
-      name: r.raceName,
-      sessions: r.sessions || []
+    const rounds = data.races.map(race => ({
+      round: race.round,
+      raceId: race.raceId,
+      raceName: race.raceName,
+      url: race.url,
     }));
 
     res.status(200).json(rounds);
-  } catch (err) {
-    console.error("ROUNDS ERROR:", err);
-    res.status(500).json({ error: "Error fetching rounds" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch rounds' });
   }
 }
