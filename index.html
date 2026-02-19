@@ -1,176 +1,99 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>F1 Top 10 Game</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #111;
-      color: white;
-      padding: 20px;
-    }
-
-    select, button {
-      padding: 8px;
-      margin: 5px 0;
-    }
-
-    .hidden {
-      display: none;
-    }
-
-    #gameArea {
-      margin-top: 20px;
-    }
-
-    input {
-      padding: 6px;
-      width: 300px;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>F1 Guessing Game</title>
+<style>
+body { font-family: Arial, sans-serif; padding: 20px; }
+select, button { margin: 5px 0; padding: 5px; }
+#participants { margin-top: 20px; }
+</style>
 </head>
 <body>
 
-<h1>F1 Top 10 Prediction Game</h1>
+<h1>F1 Guessing Game</h1>
 
-<!-- Dropdowns -->
-<label>Year:</label><br>
-<select id="yearSelect">
-  <option>Loading...</option>
-</select><br>
+<label for="year">Select Year:</label>
+<select id="year"></select>
 
-<label>Round:</label><br>
-<select id="roundSelect" disabled>
-  <option>Select year first</option>
-</select><br>
+<label for="round">Select Round:</label>
+<select id="round"></select>
 
-<label>Session:</label><br>
-<select id="sessionSelect" disabled>
-  <option>Select round first</option>
-</select><br>
+<label for="session">Select Session:</label>
+<select id="session"></select>
 
-<button id="startBtn" disabled>Start Game</button>
+<button id="loadParticipants">Load Participants</button>
 
-<!-- Game Area -->
-<div id="gameArea" class="hidden">
-  <h2>Predict Top 10</h2>
-  <p>Enter driver surnames separated by commas:</p>
-  <input type="text" id="predictionInput" placeholder="e.g. Verstappen, Norris, Hamilton..." />
-  <br><br>
-  <button id="submitBtn">Submit Prediction</button>
-
-  <div id="resultsArea"></div>
-</div>
+<div id="participants"></div>
 
 <script>
-const yearSelect = document.getElementById("yearSelect");
-const roundSelect = document.getElementById("roundSelect");
-const sessionSelect = document.getElementById("sessionSelect");
-const startBtn = document.getElementById("startBtn");
-const gameArea = document.getElementById("gameArea");
-const submitBtn = document.getElementById("submitBtn");
-const resultsArea = document.getElementById("resultsArea");
-
-let actualTop10 = [];
-
-// Load Years
-async function loadYears() {
-  const res = await fetch("/api/years");
-  const years = await res.json();
-
-  yearSelect.innerHTML = "<option>Select year</option>";
-  years.forEach(y => {
-    const opt = document.createElement("option");
-    opt.value = y;
-    opt.textContent = y;
-    yearSelect.appendChild(opt);
-  });
+async function fetchJSON(url) {
+  const response = await fetch(url);
+  return await response.json();
 }
 
-yearSelect.addEventListener("change", async () => {
-  const year = yearSelect.value;
-  roundSelect.disabled = true;
-  sessionSelect.disabled = true;
-  startBtn.disabled = true;
-
-  const res = await fetch(`/api/rounds?year=${year}`);
-  const rounds = await res.json();
-
-  roundSelect.innerHTML = "<option>Select round</option>";
-  rounds.forEach(r => {
-    const opt = document.createElement("option");
-    opt.value = r.number;
-    opt.textContent = `Round ${r.number} - ${r.name}`;
-    roundSelect.appendChild(opt);
+// Populate years
+async function loadYears() {
+  const years = await fetchJSON('/api/years');
+  const yearSelect = document.getElementById('year');
+  years.forEach(y => {
+    const option = document.createElement('option');
+    option.value = y.year;
+    option.textContent = y.year;
+    yearSelect.appendChild(option);
   });
-
-  roundSelect.disabled = false;
-});
-
-roundSelect.addEventListener("change", async () => {
-  const year = yearSelect.value;
-  const round = roundSelect.value;
-
-  sessionSelect.disabled = true;
-  startBtn.disabled = true;
-
-  const res = await fetch(`/api/sessions?year=${year}&round=${round}`);
-  const sessions = await res.json();
-
-  sessionSelect.innerHTML = "<option>Select session</option>";
-  sessions.forEach(s => {
-    const opt = document.createElement("option");
-    opt.value = s;
-    opt.textContent = s.toUpperCase();
-    sessionSelect.appendChild(opt);
-  });
-
-  sessionSelect.disabled = false;
-});
-
-sessionSelect.addEventListener("change", () => {
-  startBtn.disabled = false;
-});
-
-startBtn.addEventListener("click", async () => {
-  const year = yearSelect.value;
-  const round = roundSelect.value;
-  const session = sessionSelect.value;
-
-  const res = await fetch(`/api/session?year=${year}&round=${round}&session=${session}`);
-  const data = await res.json();
-
-  actualTop10 = data.top10.map(d =>
-    d.driver.split(" ").slice(-1)[0].toLowerCase()
-  );
-
-  gameArea.classList.remove("hidden");
-  resultsArea.innerHTML = "";
-});
-
-submitBtn.addEventListener("click", () => {
-  const userInput = document.getElementById("predictionInput").value;
-  const predictions = userInput
-    .split(",")
-    .map(p => p.trim().toLowerCase())
-    .slice(0, 10);
-
-  let score = 0;
-
-  predictions.forEach((p, i) => {
-    if (p === actualTop10[i]) score++;
-  });
-
-  resultsArea.innerHTML = `
-    <h3>Results</h3>
-    <p>Your Score: ${score} / 10</p>
-    <p><strong>Actual Top 10:</strong> ${actualTop10.join(", ")}</p>
-  `;
-});
-
-// Initial load
+}
 loadYears();
+
+// Populate rounds when year changes
+document.getElementById('year').addEventListener('change', async (e) => {
+  const year = e.target.value;
+  const rounds = await fetchJSON(`/api/rounds?year=${year}`);
+  const roundSelect = document.getElementById('round');
+  roundSelect.innerHTML = '';
+  rounds.forEach(r => {
+    const option = document.createElement('option');
+    option.value = r.meeting_key;
+    option.textContent = `${r.raceName} (${r.circuitName}, ${r.country})`;
+    roundSelect.appendChild(option);
+  });
+  // Trigger sessions load for the first round automatically
+  roundSelect.dispatchEvent(new Event('change'));
+});
+
+// Populate sessions when round changes
+document.getElementById('round').addEventListener('change', async (e) => {
+  const meeting_key = e.target.value;
+  const sessions = await fetchJSON(`/api/sessions?meeting_key=${meeting_key}`);
+  const sessionSelect = document.getElementById('session');
+  sessionSelect.innerHTML = '';
+  sessions.forEach(s => {
+    const option = document.createElement('option');
+    option.value = s.session_key;
+    option.textContent = `${s.session_name} (${s.date} ${s.time})`;
+    sessionSelect.appendChild(option);
+  });
+});
+
+// Load participants for the game
+document.getElementById('loadParticipants').addEventListener('click', async () => {
+  const session_key = document.getElementById('session').value;
+  const participants = await fetchJSON(`/api/session?session_key=${session_key}`);
+  const container = document.getElementById('participants');
+  container.innerHTML = '<h2>Participants:</h2>';
+  const list = document.createElement('ul');
+  participants.forEach(p => {
+    const li = document.createElement('li');
+    li.textContent = `${p.position}: ${p.name} ${p.surname} (${p.team})`;
+    list.appendChild(li);
+  });
+  container.appendChild(list);
+});
+
+// Load default year to trigger rounds and sessions
+document.getElementById('year').addEventListener('DOMContentLoaded', () => {
+  document.getElementById('year').dispatchEvent(new Event('change'));
+});
 </script>
 
 </body>
