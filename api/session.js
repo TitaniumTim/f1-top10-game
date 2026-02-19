@@ -1,41 +1,29 @@
+// api/session.js
+import fetch from 'node-fetch';
+
 export default async function handler(req, res) {
-  const { year, round, session } = req.query;
-  if (!year || !round || !session)
-    return res.status(400).json({ error: "Year, round and session required" });
+  const { session_key } = req.query;
+
+  if (!session_key) {
+    return res.status(400).json({ error: 'session_key is required' });
+  }
 
   try {
-    // Build API URL based on session type
-    let url;
-    const s = session.toLowerCase();
+    const response = await fetch(`https://api.openf1.org/v1/session_results?session_key=${session_key}`);
+    const data = await response.json();
 
-    if (s.startsWith("practice")) {
-      url = `https://f1api.dev/api/v1/practice/${year}/${round}/${s}`;
-    } else if (s === "qualifying") {
-      url = `https://f1api.dev/api/v1/qualifying/${year}/${round}`;
-    } else if (s === "race") {
-      url = `https://f1api.dev/api/v1/results/${year}/${round}`;
-    } else {
-      return res.status(400).json({ error: "Invalid session type" });
-    }
+    const participants = data.map(driver => ({
+      driver_id: driver.driver_id,
+      name: driver.name,
+      surname: driver.surname,
+      team: driver.team,
+      country: driver.country,
+      position: driver.position,
+    }));
 
-    const response = await fetch(url);
-    const results = await response.json();
-
-    // Take top10
-    let top10 = [];
-
-    if (Array.isArray(results)) {
-      top10 = results.slice(0, 10).map(r => ({
-        driver: `${r.Driver?.givenName} ${r.Driver?.familyName}`,
-        number: r.Driver?.permanentNumber,
-        team: r.Constructor?.name,
-        position: r.position
-      }));
-    }
-
-    res.status(200).json({ top10 });
-  } catch (err) {
-    console.error("SESSION ERROR:", err);
-    res.status(500).json({ error: "Error fetching session results" });
+    res.status(200).json(participants);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch session results' });
   }
 }
