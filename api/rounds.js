@@ -10,33 +10,30 @@ export default async function handler(req, res) {
   try {
     const response = await fetch(
       "https://api.openf1.org/v1/meetings",
-      {
-        headers: { "User-Agent": "F1-Top10-Game" }
-      }
+      { headers: { "User-Agent": "F1-Top10-Game" } }
     );
 
-    const meetings = await response.json();
-
-    if (!Array.isArray(meetings)) {
-      return res.status(500).json({ error: "Unexpected API format" });
+    if (!response.ok) {
+      return res.status(500).json({ error: "OpenF1 request failed" });
     }
 
-    // Filter meetings by selected year
-    const filtered = meetings.filter(
-      m => String(m.year) === String(year)
-    );
+    const data = await response.json();
 
-    // Remove testing sessions
+    // Access the actual meetings array
+    const meetings = data.meetings || [];
+
+    // Filter by year
+    const filtered = meetings.filter(m => String(m.year) === String(year));
+
+    // Filter out testing sessions
     const raceMeetings = filtered.filter(
-      m => m.meeting_name &&
-           !m.meeting_name.toLowerCase().includes("test")
+      m => m.meeting_name && !m.meeting_name.toLowerCase().includes("test")
     );
 
     // Sort by start date
-    raceMeetings.sort(
-      (a, b) => new Date(a.date_start) - new Date(b.date_start)
-    );
+    raceMeetings.sort((a, b) => new Date(a.date_start) - new Date(b.date_start));
 
+    // Build rounds list
     const rounds = raceMeetings.map(m => ({
       number: m.meeting_key,
       name: m.meeting_name
