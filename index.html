@@ -1,389 +1,177 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>F1 Top 10 – Real Data</title>
-<style>
-body{margin:0;font-family:system-ui;background:#0f0f14;color:#fff}
-header{padding:16px;background:#e10600;font-weight:700}
-.container{padding:16px;max-width:1200px;margin:auto}
-.card{background:#1c1c26;border-radius:8px;padding:16px;margin-bottom:16px}
-h2{margin-top:0}
-button{padding:10px 14px;background:#e10600;border:none;border-radius:6px;color:#fff;font-weight:600;cursor:pointer}
-.grid{display:grid;gap:8px;margin-bottom:16px}
-.counter{margin-bottom:10px;font-weight:600}
+  <meta charset="UTF-8">
+  <title>F1 Top 10 Game</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: white;
+      padding: 20px;
+    }
 
-/* TEAM BUTTON */
-.team-btn{position:relative;padding:12px;border-radius:6px;text-align:center;font-weight:600;cursor:pointer}
-.team-btn.selected::after{
-content:"✔";
-position:absolute;
-top:6px;
-right:8px;
-background:#000;
-color:#fff;
-border-radius:50%;
-font-size:12px;
-padding:2px 6px;
-}
+    select, button {
+      padding: 8px;
+      margin: 5px 0;
+    }
 
-/* ENTRANTS LIST */
-.entrants{font-size:.85rem;margin-top:6px;opacity:.9}
+    .hidden {
+      display: none;
+    }
 
-/* STAGE 2 */
-.stage2-row{display:grid;grid-template-columns:200px 40px 120px 40px 200px;align-items:center;gap:10px;margin-bottom:10px}
-.switch{
-width:60px;height:28px;background:#444;border-radius:20px;position:relative;cursor:pointer
-}
-.switch::after{
-content:"";
-position:absolute;width:24px;height:24px;background:#fff;border-radius:50%;top:2px;left:2px;transition:.2s
-}
-.switch.active{background:#e10600}
-.switch.active::after{left:34px}
+    #gameArea {
+      margin-top: 20px;
+    }
 
-/* STAGE 3 */
-.driver-row{display:grid;grid-template-columns:200px 1fr 1fr;gap:8px;margin-bottom:8px}
-.driver{padding:10px;border-radius:6px;text-align:center;cursor:pointer;font-weight:600}
-.driver.selected{outline:3px solid #fff}
-
-/* STAGE 4 */
-.stage4-layout{display:grid;grid-template-columns:40px 1fr;gap:12px}
-.position-col{display:grid;grid-template-rows:repeat(10,50px);gap:6px}
-.guess-col{display:grid;grid-template-rows:repeat(10,50px);gap:6px}
-.guess-slot{background:#2a2a38;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.75rem}
-.guess-slot.correct{background:#00b200}
-.guess-slot.wrong{background:#b20000}
-.pool{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
-.locked{opacity:.5}
-</style>
+    input {
+      padding: 6px;
+      width: 300px;
+    }
+  </style>
 </head>
 <body>
-<header>F1 TOP 10 – Real Data</header>
-<div class="container">
 
-<!-- SESSION SELECT -->
-<div class="card" id="session-screen">
-<h2>Select Session</h2>
-<label>Year: <select id="year-select"></select></label>
-<label>Round: <select id="round-select"></select></label>
-<label>Session: <select id="session-select"></select></label>
-<button onclick="startGame()">Start Game</button>
-</div>
+<h1>F1 Top 10 Prediction Game</h1>
 
-<!-- STAGE 1 -->
-<div class="card" id="stage1" style="display:none">
-<h2>Stage 1 – Select Teams</h2>
-<div class="counter">Selected: <span id="team-count">0</span>/<span id="max-teams">0</span></div>
-<div class="grid" id="team-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));"></div>
-<button onclick="submitStage1()">Submit Guess</button>
-</div>
+<!-- Dropdowns -->
+<label>Year:</label><br>
+<select id="yearSelect">
+  <option>Loading...</option>
+</select><br>
 
-<!-- STAGE 2 -->
-<div class="card" id="stage2" style="display:none">
-<h2>Stage 2 – Cars per Team</h2>
-<div class="counter">Total Cars: <span id="car-total">0</span>/10</div>
-<div id="stage2-container"></div>
-<button onclick="submitStage2()">Continue</button>
-</div>
+<label>Round:</label><br>
+<select id="roundSelect" disabled>
+  <option>Select year first</option>
+</select><br>
 
-<!-- STAGE 3 -->
-<div class="card" id="stage3" style="display:none">
-<h2>Stage 3 – Single Driver Teams</h2>
-<p id="stage3-message"></p>
-<div id="stage3-container"></div>
-<button onclick="submitStage3()">Continue</button>
-</div>
+<label>Session:</label><br>
+<select id="sessionSelect" disabled>
+  <option>Select round first</option>
+</select><br>
 
-<!-- STAGE 4 -->
-<div class="card" id="stage4" style="display:none">
-<h2>Stage 4 – Order the Top 10</h2>
-<div class="pool" id="driver-pool"></div>
-<div class="stage4-layout">
-<div class="position-col" id="position-col"></div>
-<div class="guess-col" id="guess-col"></div>
-</div>
-<button onclick="submitGuess()">Submit Guess</button>
-</div>
+<button id="startBtn" disabled>Start Game</button>
 
+<!-- Game Area -->
+<div id="gameArea" class="hidden">
+  <h2>Predict Top 10</h2>
+  <p>Enter driver surnames separated by commas:</p>
+  <input type="text" id="predictionInput" placeholder="e.g. Verstappen, Norris, Hamilton..." />
+  <br><br>
+  <button id="submitBtn">Submit Prediction</button>
+
+  <div id="resultsArea"></div>
 </div>
 
 <script>
-const yearSelect = document.getElementById("year-select");
-const roundSelect = document.getElementById("round-select");
-const sessionSelect = document.getElementById("session-select");
+const yearSelect = document.getElementById("yearSelect");
+const roundSelect = document.getElementById("roundSelect");
+const sessionSelect = document.getElementById("sessionSelect");
+const startBtn = document.getElementById("startBtn");
+const gameArea = document.getElementById("gameArea");
+const submitBtn = document.getElementById("submitBtn");
+const resultsArea = document.getElementById("resultsArea");
 
-let teamData = {};
-let correctOrder = [];
-let maxTeams = 6;
-let selectedTeams = [];
-let teamCars = {};
-let resolvedDrivers = [];
-let lockedPositions = Array(10).fill(null);
-let currentGuess = Array(10).fill(null);
+let actualTop10 = [];
 
-// Populate Years 2023–2025
-for(let y=2023;y<=2025;y++){
-  const opt = document.createElement("option");
-  opt.value = y;
-  opt.textContent = y;
-  yearSelect.appendChild(opt);
-}
-yearSelect.onchange = async () => {
-  const year = yearSelect.value;
-  const res = await fetch(`/api/sessions?year=${year}`);
-  const data = await res.json();
-  roundSelect.innerHTML = "";
-  data.forEach(r => {
+// Load Years
+async function loadYears() {
+  const res = await fetch("/api/years");
+  const years = await res.json();
+
+  yearSelect.innerHTML = "<option>Select year</option>";
+  years.forEach(y => {
     const opt = document.createElement("option");
-    opt.value = r.meeting_key;
-    opt.textContent = r.event_name;
-    opt.dataset.sessions = JSON.stringify(r.sessions);
+    opt.value = y;
+    opt.textContent = y;
+    yearSelect.appendChild(opt);
+  });
+}
+
+yearSelect.addEventListener("change", async () => {
+  const year = yearSelect.value;
+  roundSelect.disabled = true;
+  sessionSelect.disabled = true;
+  startBtn.disabled = true;
+
+  const res = await fetch(`/api/rounds?year=${year}`);
+  const rounds = await res.json();
+
+  roundSelect.innerHTML = "<option>Select round</option>";
+  rounds.forEach(r => {
+    const opt = document.createElement("option");
+    opt.value = r.number;
+    opt.textContent = `Round ${r.number} - ${r.name}`;
     roundSelect.appendChild(opt);
   });
-  roundSelect.onchange();
-};
-roundSelect.onchange = () => {
-  const selected = roundSelect.selectedOptions[0];
-  const sessions = JSON.parse(selected.dataset.sessions);
-  sessionSelect.innerHTML = "";
+
+  roundSelect.disabled = false;
+});
+
+roundSelect.addEventListener("change", async () => {
+  const year = yearSelect.value;
+  const round = roundSelect.value;
+
+  sessionSelect.disabled = true;
+  startBtn.disabled = true;
+
+  const res = await fetch(`/api/sessions?year=${year}&round=${round}`);
+  const sessions = await res.json();
+
+  sessionSelect.innerHTML = "<option>Select session</option>";
   sessions.forEach(s => {
     const opt = document.createElement("option");
-    opt.value = s.session_key;
-    opt.textContent = s.session_name;
+    opt.value = s;
+    opt.textContent = s.toUpperCase();
     sessionSelect.appendChild(opt);
   });
-};
-yearSelect.onchange(); // initial load
 
-async function startGame(){
-  const sessionKey = sessionSelect.value;
-  const res = await fetch(`/api/session_results?session_key=${sessionKey}`);
-  const top10 = await res.json();
+  sessionSelect.disabled = false;
+});
 
-  // Build teamData dynamically from session results
-  teamData = {};
-  top10.forEach(d=>{
-    if(!teamData[d.team]) teamData[d.team]={color:'#'+Math.floor(Math.random()*16777215).toString(16), drivers:[]};
-    teamData[d.team].drivers.push([d.number,d.driver]);
+sessionSelect.addEventListener("change", () => {
+  startBtn.disabled = false;
+});
+
+startBtn.addEventListener("click", async () => {
+  const year = yearSelect.value;
+  const round = roundSelect.value;
+  const session = sessionSelect.value;
+
+  const res = await fetch(`/api/session?year=${year}&round=${round}&session=${session}`);
+  const data = await res.json();
+
+  actualTop10 = data.top10.map(d =>
+    d.driver.split(" ").slice(-1)[0].toLowerCase()
+  );
+
+  gameArea.classList.remove("hidden");
+  resultsArea.innerHTML = "";
+});
+
+submitBtn.addEventListener("click", () => {
+  const userInput = document.getElementById("predictionInput").value;
+  const predictions = userInput
+    .split(",")
+    .map(p => p.trim().toLowerCase())
+    .slice(0, 10);
+
+  let score = 0;
+
+  predictions.forEach((p, i) => {
+    if (p === actualTop10[i]) score++;
   });
 
-  correctOrder = top10.map(d=>d.driver);
-  maxTeams = Object.keys(teamData).length;
-  document.getElementById("max-teams").textContent = maxTeams;
+  resultsArea.innerHTML = `
+    <h3>Results</h3>
+    <p>Your Score: ${score} / 10</p>
+    <p><strong>Actual Top 10:</strong> ${actualTop10.join(", ")}</p>
+  `;
+});
 
-  document.getElementById("session-screen").style.display="none";
-  document.getElementById("stage1").style.display="block";
-  buildStage1();
-}
-
-// ----------- Stage 1 ----------
-function buildStage1(){
- const grid=document.getElementById("team-grid");
- grid.innerHTML="";
- selectedTeams=[];
- document.getElementById("team-count").textContent=0;
- const teams=Object.keys(teamData).sort();
- teams.forEach(team=>{
-   const div=document.createElement("div");
-   div.className="team-btn";
-   div.style.background=teamData[team].color;
-   let entrants="";
-   teamData[team].drivers.forEach(d=>{
-     entrants+=d[0]+" "+d[1]+"<br>";
-   });
-   div.innerHTML=team+"<div class='entrants'>"+entrants+"</div>";
-   div.onclick=function(){
-     if(!div.classList.contains("selected") && selectedTeams.length>=maxTeams) return;
-     div.classList.toggle("selected");
-     if(div.classList.contains("selected")){
-       selectedTeams.push(team);
-     }else{
-       selectedTeams = selectedTeams.filter(t=>t!==team);
-     }
-     document.getElementById("team-count").textContent=selectedTeams.length;
-   };
-   grid.appendChild(div);
- });
-}
-
-function submitStage1(){
-  if(selectedTeams.length!==maxTeams){alert("Select all teams"); return;}
-  document.getElementById("stage1").style.display="none";
-  document.getElementById("stage2").style.display="block";
-  buildStage2();
-}
-
-// ----------- Stage 2 ----------
-function buildStage2(){
-  selectedTeams.sort();
-  const container=document.getElementById("stage2-container");
-  container.innerHTML="";
-  teamCars={};
-  selectedTeams.forEach(team=>{
-    teamCars[team]=1;
-    const row=document.createElement("div");
-    row.className="stage2-row";
-    const teamBox=document.createElement("div");
-    teamBox.className="team-btn";
-    teamBox.style.background=teamData[team].color;
-    teamBox.textContent=team;
-    const label1=document.createElement("div"); label1.textContent="1"; label1.style.textAlign="center"; label1.style.fontWeight="600";
-    const toggle=document.createElement("div"); toggle.className="switch";
-    const label2=document.createElement("div"); label2.textContent="2"; label2.style.textAlign="center"; label2.style.fontWeight="600";
-
-    toggle.onclick=function(){
-      let total=Object.values(teamCars).reduce((a,b)=>a+b,0);
-      if(teamCars[team]===1){
-        if(total>=10) return;
-        teamCars[team]=2;
-        toggle.classList.add("active");
-        const copy=teamBox.cloneNode(true);
-        row.appendChild(copy);
-      }else{
-        teamCars[team]=1;
-        toggle.classList.remove("active");
-        if(row.children.length>5) row.removeChild(row.lastChild);
-      }
-      document.getElementById("car-total").textContent=Object.values(teamCars).reduce((a,b)=>a+b,0);
-    };
-
-    row.appendChild(teamBox);
-    row.appendChild(label1);
-    row.appendChild(toggle);
-    row.appendChild(label2);
-    container.appendChild(row);
-  });
-  document.getElementById("car-total").textContent=Object.values(teamCars).reduce((a,b)=>a+b,0);
-}
-
-function submitStage2(){
-  const total = Object.values(teamCars).reduce((a,b)=>a+b,0);
-  if(total!==10){alert("Must total 10 cars");return;}
-  resolvedDrivers=[];
-  document.getElementById("stage2").style.display="none";
-  document.getElementById("stage3").style.display="block";
-  buildStage3();
-}
-
-// ----------- Stage 3 ----------
-function buildStage3(){
-  const container=document.getElementById("stage3-container");
-  container.innerHTML="";
-  const singleTeams=[];
-  for(let t in teamCars){ if(teamCars[t]===1) singleTeams.push(t);}
-  singleTeams.sort();
-  if(singleTeams.length===0){
-    document.getElementById("stage3-message").textContent="All teams have 2 drivers. Proceed to Stage 4.";
-    return;
-  }
-  document.getElementById("stage3-message").textContent="These teams have only one driver in the top 10. Select which one.";
-  singleTeams.forEach(team=>{
-    const row=document.createElement("div"); row.className="driver-row";
-    const teamBox=document.createElement("div"); teamBox.className="team-btn"; teamBox.style.background=teamData[team].color; teamBox.textContent=team;
-    row.appendChild(teamBox);
-    teamData[team].drivers.forEach(d=>{
-      const drv=document.createElement("div"); drv.className="driver"; drv.style.background=teamData[team].color; drv.textContent=d[0]+" - "+d[1];
-      drv.onclick=function(){
-        const siblings=row.querySelectorAll(".driver"); siblings.forEach(s=>s.classList.remove("selected"));
-        drv.classList.add("selected");
-      }
-      row.appendChild(drv);
-    });
-    container.appendChild(row);
-  });
-}
-
-function submitStage3(){
-  for(let team in teamCars){
-    if(teamCars[team]===2){
-      teamData[team].drivers.forEach(d=>resolvedDrivers.push(d[1]));
-    }
-  }
-  const selected=document.querySelectorAll(".driver.selected");
-  selected.forEach(d=>resolvedDrivers.push(d.textContent.split(" - ")[1]));
-  if(resolvedDrivers.length!==10){alert("Driver selection incomplete");return;}
-  document.getElementById("stage3").style.display="none";
-  document.getElementById("stage4").style.display="block";
-  buildStage4();
-}
-
-// ----------- Stage 4 ----------
-function buildStage4(){
-  const posCol=document.getElementById("position-col");
-  const guessCol=document.getElementById("guess-col");
-  posCol.innerHTML=""; guessCol.innerHTML="";
-  currentGuess=Array(10).fill(null);
-  lockedPositions=Array(10).fill(null);
-
-  for(let i=0;i<10;i++){
-    const p=document.createElement("div"); p.className="guess-slot"; p.textContent=i+1; posCol.appendChild(p);
-    const slot=document.createElement("div"); slot.className="guess-slot"; slot.dataset.index=i;
-    slot.ondragover=e=>e.preventDefault();
-    slot.ondrop=e=>{e.preventDefault(); const name=e.dataTransfer.getData("text"); placeDriver(name,i);};
-    guessCol.appendChild(slot);
-  }
-
-  const pool=document.getElementById("driver-pool"); pool.innerHTML="";
-  resolvedDrivers.sort((a,b)=>getDriverNumber(a)-getDriverNumber(b));
-  resolvedDrivers.forEach(name=>{
-    const team=getDriverTeam(name); const num=getDriverNumber(name);
-    const d=document.createElement("div"); d.className="driver"; d.draggable=true; d.style.background=teamData[team].color;
-    d.textContent=num+" - "+name;
-    d.ondragstart=e=>e.dataTransfer.setData("text",name);
-    d.onclick=()=>placeDriver(name,currentGuess.indexOf(null));
-    pool.appendChild(d);
-  });
-}
-
-function getDriverTeam(name){
-  for(let t in teamData){
-    if(teamData[t].drivers.find(d=>d[1]===name)) return t;
-  }
-  return null;
-}
-function getDriverNumber(name){
-  for(let t in teamData){
-    const drv=teamData[t].drivers.find(d=>d[1]===name);
-    if(drv) return drv[0];
-  }
-  return 0;
-}
-
-function placeDriver(name,index){
-  if(index<0 || lockedPositions[index] || currentGuess.indexOf(name)!==-1) return;
-  currentGuess[index]=name;
-  renderBoard();
-  const poolDrivers=document.querySelectorAll("#driver-pool .driver");
-  poolDrivers.forEach(d=>{if(d.textContent.includes(name)) d.remove();});
-}
-
-function renderBoard(){
-  const slots=document.querySelectorAll("#guess-col .guess-slot");
-  slots.forEach((s,i)=>{
-    if(currentGuess[i]){
-      const team=getDriverTeam(currentGuess[i]);
-      const num=getDriverNumber(currentGuess[i]);
-      s.style.background=teamData[team].color; s.textContent=num+" - "+currentGuess[i];
-    }else{
-      s.style.background="#2a2a38"; s.textContent="";
-    }
-  });
-}
-
-function submitGuess(){
-  const slots=document.querySelectorAll("#guess-col .guess-slot");
-  for(let i=0;i<10;i++){
-    if(currentGuess[i]===correctOrder[i]){
-      lockedPositions[i]=currentGuess[i];
-      slots[i].classList.add("correct");
-    }else{
-      slots[i].classList.add("wrong");
-    }
-  }
-  currentGuess=lockedPositions.slice();
-}
+// Initial load
+loadYears();
 </script>
+
 </body>
 </html>
