@@ -5,14 +5,15 @@ export default async function handler(req, res) {
   if (!year) return res.status(400).json({ error: "Year required" });
 
   try {
-    const response = await fetch(`https://api.openf1.org/v1/calendar/${year}.json`);
-    const data = await response.json();
+    const response = await fetch(`https://api.openf1.org/v1/meetings?year=${year}`);
+    const meetings = await response.json();
 
-    // Map rounds into {number, name}
-    const rounds = data.map(event => ({
-      number: event.round,
-      name: event.raceName
-    }));
+    const rounds = meetings
+      .sort((a, b) => a.meeting_key - b.meeting_key)
+      .map(m => ({
+        number: m.meeting_key,
+        name: m.meeting_name
+      }));
 
     res.status(200).json(rounds);
   } catch (err) {
