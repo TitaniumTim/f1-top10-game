@@ -1,100 +1,34 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>F1 Guessing Game</title>
-<style>
-body { font-family: Arial, sans-serif; padding: 20px; }
-select, button { margin: 5px 0; padding: 5px; }
-#participants { margin-top: 20px; }
-</style>
+  <meta charset="UTF-8">
+  <title>F1 Mastermind</title>
+  <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
+  <h1>F1 Mastermind</h1>
 
-<h1>F1 Guessing Game</h1>
+  <!-- Session selection -->
+  <div id="session-selector">
+    <label for="year">Year:</label>
+    <select id="year"></select>
 
-<label for="year">Select Year:</label>
-<select id="year"></select>
+    <label for="round">Round:</label>
+    <select id="round"></select>
 
-<label for="round">Select Round:</label>
-<select id="round"></select>
+    <label for="session">Session:</label>
+    <select id="session"></select>
+  </div>
 
-<label for="session">Select Session:</label>
-<select id="session"></select>
+  <!-- Gameplay area -->
+  <div id="game-container">
+    <h2>Guess the top 5 drivers!</h2>
+    <div id="stage-status">Select a session to start.</div>
+    <div id="guess-inputs"></div>
+    <button id="submit-guess" disabled>Submit Guess</button>
+    <div id="feedback"></div>
+  </div>
 
-<button id="loadParticipants">Load Participants</button>
-
-<div id="participants"></div>
-
-<script>
-async function fetchJSON(url) {
-  const response = await fetch(url);
-  return await response.json();
-}
-
-// Populate years
-async function loadYears() {
-  const years = await fetchJSON('/api/years');
-  const yearSelect = document.getElementById('year');
-  years.forEach(y => {
-    const option = document.createElement('option');
-    option.value = y.year;
-    option.textContent = y.year;
-    yearSelect.appendChild(option);
-  });
-}
-loadYears();
-
-// Populate rounds when year changes
-document.getElementById('year').addEventListener('change', async (e) => {
-  const year = e.target.value;
-  const rounds = await fetchJSON(`/api/rounds?year=${year}`);
-  const roundSelect = document.getElementById('round');
-  roundSelect.innerHTML = '';
-  rounds.forEach(r => {
-    const option = document.createElement('option');
-    option.value = r.meeting_key;
-    option.textContent = `${r.raceName} (${r.circuitName}, ${r.country})`;
-    roundSelect.appendChild(option);
-  });
-  // Trigger sessions load for the first round automatically
-  roundSelect.dispatchEvent(new Event('change'));
-});
-
-// Populate sessions when round changes
-document.getElementById('round').addEventListener('change', async (e) => {
-  const meeting_key = e.target.value;
-  const sessions = await fetchJSON(`/api/sessions?meeting_key=${meeting_key}`);
-  const sessionSelect = document.getElementById('session');
-  sessionSelect.innerHTML = '';
-  sessions.forEach(s => {
-    const option = document.createElement('option');
-    option.value = s.session_key;
-    option.textContent = `${s.session_name} (${s.date} ${s.time})`;
-    sessionSelect.appendChild(option);
-  });
-});
-
-// Load participants for the game
-document.getElementById('loadParticipants').addEventListener('click', async () => {
-  const session_key = document.getElementById('session').value;
-  const participants = await fetchJSON(`/api/session?session_key=${session_key}`);
-  const container = document.getElementById('participants');
-  container.innerHTML = '<h2>Participants:</h2>';
-  const list = document.createElement('ul');
-  participants.forEach(p => {
-    const li = document.createElement('li');
-    li.textContent = `${p.position}: ${p.name} ${p.surname} (${p.team})`;
-    list.appendChild(li);
-  });
-  container.appendChild(list);
-});
-
-// Load default year to trigger rounds and sessions
-document.getElementById('year').addEventListener('DOMContentLoaded', () => {
-  document.getElementById('year').dispatchEvent(new Event('change'));
-});
-</script>
-
+  <script src="js/main.js"></script>
 </body>
 </html>
