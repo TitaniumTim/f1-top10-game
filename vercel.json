@@ -1,29 +1,16 @@
 {
-  "version": 2,
-  "routes": [
-    {
-      "src": "/css/(.*)",
-      "dest": "/css/$1",
-      "headers": { "cache-control": "s-maxage=31536000, immutable" }
-    },
-    {
-      "src": "/js/(.*)",
-      "dest": "/js/$1",
-      "headers": { "cache-control": "s-maxage=31536000, immutable" }
-    }
-  ],
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "trailingSlash": false,
   "headers": [
     {
-      "source": "/(.*).js",
+      "source": "/(.*)",
       "headers": [
-        { "key": "Content-Type", "value": "application/javascript" }
-      ]
-    },
-    {
-      "source": "/(.*).css",
-      "headers": [
-        { "key": "Content-Type", "value": "text/css" }
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
       ]
     }
+  ],
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
