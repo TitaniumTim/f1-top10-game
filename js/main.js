@@ -279,6 +279,7 @@ async function setupFlow() {
     } finally {
       showSpinner(false);
     }
+    grid.appendChild(card);
   });
 }
 
