@@ -67,15 +67,18 @@ function renderScore() {
 function renderSetup(message = "") {
   setupPanel.innerHTML = `
     <h2>Pick a Session</h2>
-    <p class="status">${message || "Choose season, round and session to begin."}</p>
+    <p class="status" id="setupStatus">${message || "Enter your name, then load available sessions."}</p>
     <div class="grid-3">
       <div><label for="playerName">Player name</label><input id="playerName" placeholder="e.g. Oliver"/></div>
+      <div style="align-self:end;"><button id="loadSessionsBtn">Get Available F1 Sessions</button></div>
+    </div>
+    <div id="sessionControls" class="grid-3 hidden" style="margin-top:0.75rem;">
       <div><label for="year">Year</label><select id="year"></select></div>
       <div><label for="round">Round</label><select id="round"></select></div>
-    </div>
-    <div class="grid-3" style="margin-top:0.75rem;">
       <div><label for="session">Session</label><select id="session"></select></div>
-      <div style="align-self:end;"><button id="startBtn">Start Game</button></div>
+    </div>
+    <div id="startWrap" class="grid-3 hidden" style="margin-top:0.75rem;">
+      <div></div><div></div><div style="align-self:end;"><button id="startBtn">Start Game</button></div>
     </div>
   `;
 }
@@ -85,55 +88,94 @@ function formatRound(r) {
 }
 
 async function setupFlow() {
-  renderSetup("Loading years from backend… free Render tier may take a moment.");
+  renderSetup();
   const playerInput = document.getElementById("playerName");
-  const yearSel = document.getElementById("year");
-  const roundSel = document.getElementById("round");
-  const sessionSel = document.getElementById("session");
-  const startBtn = document.getElementById("startBtn");
+  const loadSessionsBtn = document.getElementById("loadSessionsBtn");
+  const status = document.getElementById("setupStatus");
+  const sessionControls = document.getElementById("sessionControls");
+  const startWrap = document.getElementById("startWrap");
 
-  const years = await fetchData(`${backend}/years`);
-  years.forEach((y) => yearSel.add(new Option(y, y)));
+  let selectorsReady = false;
 
-  async function loadRounds() {
-    roundSel.innerHTML = "";
-    sessionSel.innerHTML = "";
-    const rounds = await fetchData(`${backend}/rounds?year=${yearSel.value}`);
-    rounds.forEach((r) => roundSel.add(new Option(formatRound(r), r.round)));
-    await loadSessions();
-  }
+  loadSessionsBtn.addEventListener("click", async () => {
+    if (!playerInput.value.trim()) {
+      status.textContent = "Please enter your name first.";
+      return;
+    }
 
-  async function loadSessions() {
-    sessionSel.innerHTML = "";
-    const sessions = await fetchData(`${backend}/sessions?year=${yearSel.value}&round=${roundSel.value}`);
-    sessions.filter((s) => s.session_name && s.session_name !== "None").forEach((s) => sessionSel.add(new Option(s.session_name, s.session_name)));
-  }
-
-  yearSel.addEventListener("change", () => loadRounds());
-  roundSel.addEventListener("change", () => loadSessions());
-
-  await loadRounds();
-
-  startBtn.addEventListener("click", async () => {
-    if (!playerInput.value.trim()) return alert("Please enter your name first.");
     state.player = playerInput.value.trim();
-    state.year = Number(yearSel.value);
-    state.round = Number(roundSel.value);
-    state.session = sessionSel.value;
+    renderScore();
 
-    renderSetup("Loading session data… this can take ~30 seconds on free tier.");
+    if (selectorsReady) {
+      status.textContent = "Sessions are ready below. Pick your session and start.";
+      return;
+    }
+
+    loadSessionsBtn.disabled = true;
+    status.textContent = "Waking the F1 backend and loading available sessions… this can take around 30 seconds.";
 
     try {
-      const results = await fetchData(`${backend}/session_results?year=${state.year}&round=${state.round}&session=${encodeURIComponent(state.session)}`);
-      if (!results || results.length < 10) throw new Error("Session does not have enough data.");
-      prepareGame(results);
-      setupPanel.classList.add("hidden");
-      gamePanel.classList.remove("hidden");
-      state.stage = 1;
-      renderGame();
+      const yearSel = document.getElementById("year");
+      const roundSel = document.getElementById("round");
+      const sessionSel = document.getElementById("session");
+      const startBtn = document.getElementById("startBtn");
+
+      const years = await fetchData(`${backend}/years`);
+      yearSel.innerHTML = "";
+      years.forEach((y) => yearSel.add(new Option(y, y)));
+
+      async function loadRounds() {
+        roundSel.innerHTML = "";
+        sessionSel.innerHTML = "";
+        const rounds = await fetchData(`${backend}/rounds?year=${yearSel.value}`);
+        rounds.forEach((r) => roundSel.add(new Option(formatRound(r), r.round)));
+        await loadSessions();
+      }
+
+      async function loadSessions() {
+        sessionSel.innerHTML = "";
+        const sessions = await fetchData(`${backend}/sessions?year=${yearSel.value}&round=${roundSel.value}`);
+        sessions
+          .filter((s) => s.session_name && s.session_name !== "None")
+          .forEach((s) => sessionSel.add(new Option(s.session_name, s.session_name)));
+      }
+
+      yearSel.addEventListener("change", () => loadRounds());
+      roundSel.addEventListener("change", () => loadSessions());
+      await loadRounds();
+
+      sessionControls.classList.remove("hidden");
+      startWrap.classList.remove("hidden");
+      selectorsReady = true;
+      status.textContent = "Sessions loaded. Select year, round and session, then tap Start Game.";
+
+      startBtn.addEventListener("click", async () => {
+        if (!playerInput.value.trim()) return alert("Please enter your name first.");
+        state.player = playerInput.value.trim();
+        state.year = Number(yearSel.value);
+        state.round = Number(roundSel.value);
+        state.session = sessionSel.value;
+
+        renderScore();
+        status.textContent = "Loading session data… this can take ~30 seconds on free tier.";
+        startBtn.disabled = true;
+
+        try {
+          const results = await fetchData(`${backend}/session_results?year=${state.year}&round=${state.round}&session=${encodeURIComponent(state.session)}`);
+          if (!results || results.length < 10) throw new Error("Session does not have enough data.");
+          prepareGame(results);
+          setupPanel.classList.add("hidden");
+          gamePanel.classList.remove("hidden");
+          state.stage = 1;
+          renderGame();
+        } catch (error) {
+          startBtn.disabled = false;
+          status.textContent = `Could not load that session yet (${error.message}). Please try another session.`;
+        }
+      });
     } catch (error) {
-      renderSetup(`Could not load that session yet (${error.message}). Please try another session.`);
-      setupFlow();
+      status.textContent = `Could not load available sessions (${error.message}). Please try again.`;
+      loadSessionsBtn.disabled = false;
     }
   });
 }
