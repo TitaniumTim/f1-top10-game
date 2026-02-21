@@ -279,6 +279,125 @@ async function setupFlow() {
     } finally {
       showSpinner(false);
     }
+
+    state.player = playerInput.value.trim();
+    renderScore();
+
+    if (selectorsReady) {
+      title.textContent = "Pick a Session";
+      status.textContent = "Sessions are ready below. Pick your session and start.";
+      return;
+    }
+
+    loadSessionsBtn.disabled = true;
+    showSpinner(true);
+    status.textContent = "Waking the F1 backend and loading available sessions… this can take around 30-60 seconds.";
+
+    try {
+      const yearSel = document.getElementById("year");
+      const roundSel = document.getElementById("round");
+      const sessionSel = document.getElementById("session");
+      const startBtn = document.getElementById("startBtn");
+
+      const updateStartBtnState = () => {
+        const ready = Boolean(yearSel.value) && Boolean(roundSel.value) && Boolean(sessionSel.value);
+        startBtn.disabled = !ready;
+      };
+
+      const years = await fetchData(`${backend}/years`, 60000);
+      yearSel.innerHTML = "";
+      years.forEach((y) => yearSel.add(new Option(y, y)));
+
+      async function loadRounds() {
+        roundSel.innerHTML = "";
+        sessionSel.innerHTML = "";
+        updateStartBtnState();
+        const rounds = await fetchData(`${backend}/rounds?year=${yearSel.value}`, 60000);
+        rounds.forEach((r) => roundSel.add(new Option(formatRound(r), r.round)));
+        await loadSessions();
+      }
+
+      async function loadSessions() {
+        sessionSel.innerHTML = "";
+        updateStartBtnState();
+        const sessions = await fetchData(`${backend}/sessions?year=${yearSel.value}&round=${roundSel.value}`, 60000);
+        sessions
+          .filter((s) => s.session_name && s.session_name !== "None")
+          .forEach((s) => sessionSel.add(new Option(s.session_name, s.session_name)));
+        updateStartBtnState();
+      }
+
+      yearSel.addEventListener("change", () => loadRounds());
+      roundSel.addEventListener("change", () => loadSessions());
+      sessionSel.addEventListener("change", () => updateStartBtnState());
+
+      await loadRounds();
+
+      title.textContent = "Pick a Session";
+      sessionControls.classList.remove("hidden");
+      startWrap.classList.remove("hidden");
+      selectorsReady = true;
+      status.textContent = "Sessions loaded. Select year, round and session, then tap Start Game.";
+      updateStartBtnState();
+
+      startBtn.addEventListener("click", async () => {
+        if (!playerInput.value.trim()) return alert("Please enter your name first.");
+        state.player = playerInput.value.trim();
+        state.year = Number(yearSel.value);
+        state.round = Number(roundSel.value);
+        state.session = sessionSel.value;
+
+        renderScore();
+        status.textContent = "Loading session data… this can take up to 2 minutes on free tier.";
+        startBtn.disabled = true;
+        showSpinner(true);
+
+        try {
+          const results = await fetchData(`${backend}/session_results?year=${state.year}&round=${state.round}&session=${encodeURIComponent(state.session)}`, 120000);
+
+          const normalizedResults = Array.isArray(results)
+            ? results
+            : Array.isArray(results?.results)
+              ? results.results
+              : null;
+
+          if (!normalizedResults || normalizedResults.length < 10) {
+            throw new Error("Session does not have enough result data.");
+          }
+
+          prepareGame(normalizedResults);
+          setupPanel.classList.add("hidden");
+          gamePanel.classList.remove("hidden");
+          state.stage = 1;
+          renderGame();
+        } catch (error) {
+          showSpinner(false);
+          status.textContent = `Could not load that session yet (${error.message}). Please try another session.`;
+          updateStartBtnState();
+        }
+      });
+    } catch (error) {
+      status.textContent = `Could not load available sessions (${error.message}). Please try again.`;
+      loadSessionsBtn.disabled = false;
+    } finally {
+      showSpinner(false);
+    }
+    grid.appendChild(card);
+  });
+
+  const submit = document.getElementById("submitStage1");
+  submit.disabled = selected.size !== required;
+  submit.addEventListener("click", () => {
+    const pick = [...selected];
+    const wrong = pick.filter((t) => !state.top10Teams.has(t));
+    const correct = pick.filter((t) => state.top10Teams.has(t));
+    correct.forEach((t) => state.stage1Confirmed.add(t));
+    wrong.forEach((t) => state.stage1Eliminated.add(t));
+    state.stage1History.push(`Picked: ${pick.join(", ")} | Wrong: ${wrong.length || 0}`);
+    const solved = state.stage1Confirmed.size === required;
+    bumpSubmission(solved);
+    if (solved) state.stage = 2;
+    renderGame();
   });
 }
 
