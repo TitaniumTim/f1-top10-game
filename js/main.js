@@ -6,14 +6,6 @@ const playerChip = document.getElementById("player-chip");
 const scoreChip = document.getElementById("score-chip");
 const submissionsChip = document.getElementById("submissions-chip");
 
-const driverNumbers = {
-  "Max Verstappen": 1, "Sergio Perez": 11, "Lewis Hamilton": 44, "George Russell": 63,
-  "Charles Leclerc": 16, "Carlos Sainz": 55, "Lando Norris": 4, "Oscar Piastri": 81,
-  "Fernando Alonso": 14, "Lance Stroll": 18, "Pierre Gasly": 10, "Esteban Ocon": 31,
-  "Alexander Albon": 23, "Logan Sargeant": 2, "Valtteri Bottas": 77, "Guanyu Zhou": 24,
-  "Yuki Tsunoda": 22, "Daniel Ricciardo": 3, "Kevin Magnussen": 20, "Nico Hulkenberg": 27
-};
-
 const state = {
   player: "",
   score: 100,
@@ -29,6 +21,8 @@ const state = {
   top10Teams: new Set(),
   top10TeamCounts: new Map(),
   top10SingleTeamDriver: new Map(),
+  driverNumbers: new Map(),
+  teamColors: new Map(),
   stage1Confirmed: new Set(),
   stage1Eliminated: new Set(),
   stage1History: [],
@@ -43,6 +37,43 @@ const state = {
 const byTeamName = (a, b) => a.localeCompare(b);
 const cache = new Map();
 
+function normalizeHexColor(value) {
+  if (!value || typeof value !== "string") return null;
+  const v = value.trim();
+  if (!v) return null;
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) return v;
+  if (/^[0-9a-fA-F]{6}$/.test(v)) return `#${v}`;
+  if (/^#[0-9a-fA-F]{3}$/.test(v)) {
+    return `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}`;
+  }
+  return null;
+}
+
+function toTint(hex, alpha = 0.18) {
+  const c = normalizeHexColor(hex);
+  if (!c) return "rgba(39,49,66,0.35)";
+  const r = parseInt(c.slice(1, 3), 16);
+  const g = parseInt(c.slice(3, 5), 16);
+  const b = parseInt(c.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function getTeamColor(team) {
+  return state.teamColors.get(team) || "#3d444d";
+}
+
+function getDriverNumber(driver) {
+  return state.driverNumbers.get(driver);
+}
+
+function applyTeamCardStyle(card, team, subdued = false) {
+  const teamColor = getTeamColor(team);
+  card.style.borderColor = teamColor;
+  if (!subdued) {
+    card.style.background = `linear-gradient(140deg, ${toTint(teamColor, 0.22)}, var(--panel-alt) 58%)`;
+  }
+}
+
 async function fetchData(url, timeoutMs = 45000) {
   if (cache.has(url)) return cache.get(url);
 
@@ -51,7 +82,18 @@ async function fetchData(url, timeoutMs = 45000) {
 
   try {
     const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+
+    if (!res.ok) {
+      let details = "";
+      try {
+        const body = await res.json();
+        details = body?.message || body?.error || "";
+      } catch {
+        // Ignore parse errors and fall back to status only.
+      }
+      throw new Error(details ? `Request failed: ${res.status} (${details})` : `Request failed: ${res.status}`);
+    }
+
     const data = await res.json();
     cache.set(url, data);
     return data;
@@ -85,16 +127,24 @@ function renderSetup(message = "") {
       <div><label for="playerName">Player name</label><input id="playerName" placeholder="e.g. Oliver"/></div>
       <div style="align-self:end;"><button id="loadSessionsBtn">Get Available F1 Sessions</button></div>
     </div>
-    <div id="sessionControls" class="grid-3 hidden" style="margin-top:0.75rem;">
+    <div id="sessionStep" class="hidden"></div>
+    <div id="setupSpinner" class="spinner hidden" aria-live="polite" aria-label="Loading"></div>
+  `;
+}
+
+function renderSessionStep() {
+  const sessionStep = document.getElementById("sessionStep");
+  sessionStep.innerHTML = `
+    <div class="grid-3" style="margin-top:0.75rem;">
       <div><label for="year">Year</label><select id="year"></select></div>
       <div><label for="round">Round</label><select id="round"></select></div>
       <div><label for="session">Session</label><select id="session"></select></div>
     </div>
-    <div id="startWrap" class="grid-3 hidden" style="margin-top:0.75rem;">
+    <div class="grid-3" style="margin-top:0.75rem;">
       <div></div><div></div><div style="align-self:end;"><button id="startBtn" disabled>Start Game</button></div>
     </div>
-    <div id="setupSpinner" class="spinner hidden" aria-live="polite" aria-label="Loading"></div>
   `;
+  sessionStep.classList.remove("hidden");
 }
 
 function formatRound(r) {
@@ -107,8 +157,7 @@ async function setupFlow() {
   const loadSessionsBtn = document.getElementById("loadSessionsBtn");
   const status = document.getElementById("setupStatus");
   const title = document.getElementById("setupTitle");
-  const sessionControls = document.getElementById("sessionControls");
-  const startWrap = document.getElementById("startWrap");
+  const sessionStep = document.getElementById("sessionStep");
   const spinner = document.getElementById("setupSpinner");
 
   let selectorsReady = false;
@@ -119,6 +168,116 @@ async function setupFlow() {
     if (!playerInput.value.trim()) {
       status.textContent = "Please enter your name first.";
       return;
+    }
+
+    state.player = playerInput.value.trim();
+    renderScore();
+
+    if (selectorsReady) {
+      title.textContent = "Pick a Session";
+      status.textContent = "Sessions are ready below. Pick your session and start.";
+      return;
+    }
+
+    loadSessionsBtn.disabled = true;
+    showSpinner(true);
+    status.textContent = "Waking the F1 backend and loading available sessions… this can take around 30-60 seconds.";
+
+    try {
+      renderSessionStep();
+
+      const yearSel = document.getElementById("year");
+      const roundSel = document.getElementById("round");
+      const sessionSel = document.getElementById("session");
+      const startBtn = document.getElementById("startBtn");
+
+      const updateStartBtnState = () => {
+        const ready = Boolean(yearSel.value) && Boolean(roundSel.value) && Boolean(sessionSel.value);
+        startBtn.disabled = !ready;
+      };
+
+      const years = await fetchData(`${backend}/years`, 60000);
+      yearSel.innerHTML = "";
+      years.forEach((y) => yearSel.add(new Option(y, y)));
+
+      async function loadRounds() {
+        roundSel.innerHTML = "";
+        sessionSel.innerHTML = "";
+        updateStartBtnState();
+        const rounds = await fetchData(`${backend}/rounds?year=${yearSel.value}`, 60000);
+        rounds.forEach((r) => roundSel.add(new Option(formatRound(r), r.round)));
+        await loadSessions();
+      }
+
+      async function loadSessions() {
+        sessionSel.innerHTML = "";
+        updateStartBtnState();
+        const sessions = await fetchData(`${backend}/sessions?year=${yearSel.value}&round=${roundSel.value}`, 60000);
+        sessions
+          .filter((s) => s.session_name && s.session_name !== "None")
+          .forEach((s) => sessionSel.add(new Option(s.session_name, s.session_name)));
+        updateStartBtnState();
+      }
+
+      yearSel.addEventListener("change", () => loadRounds());
+      roundSel.addEventListener("change", () => loadSessions());
+      sessionSel.addEventListener("change", () => updateStartBtnState());
+
+      await loadRounds();
+
+      title.textContent = "Pick a Session";
+      selectorsReady = true;
+      status.textContent = "Sessions loaded. Select year, round and session, then tap Start Game.";
+      updateStartBtnState();
+
+      startBtn.addEventListener("click", async () => {
+        if (!playerInput.value.trim()) return alert("Please enter your name first.");
+        state.player = playerInput.value.trim();
+        state.year = Number(yearSel.value);
+        state.round = Number(roundSel.value);
+        state.session = sessionSel.value;
+
+        if (!state.year || Number.isNaN(state.round) || !state.session) {
+          status.textContent = "Please select year, round and session before starting.";
+          updateStartBtnState();
+          return;
+        }
+
+        renderScore();
+        status.textContent = "Loading session data… this can take up to 2 minutes on free tier.";
+        startBtn.disabled = true;
+        showSpinner(true);
+
+        try {
+          const results = await fetchData(`${backend}/session_results?year=${state.year}&round=${state.round}&session=${encodeURIComponent(state.session)}`, 120000);
+
+          const normalizedResults = Array.isArray(results)
+            ? results
+            : Array.isArray(results?.results)
+              ? results.results
+              : null;
+
+          if (!normalizedResults || normalizedResults.length < 10) {
+            throw new Error("Session does not have enough result data.");
+          }
+
+          prepareGame(normalizedResults);
+          setupPanel.classList.add("hidden");
+          gamePanel.classList.remove("hidden");
+          state.stage = 1;
+          renderGame();
+        } catch (error) {
+          showSpinner(false);
+          status.textContent = `Could not load that session yet (${error.message}). Please try another session.`;
+          updateStartBtnState();
+        }
+      });
+    } catch (error) {
+      sessionStep.classList.add("hidden");
+      status.textContent = `Could not load available sessions (${error.message}). Please try again.`;
+      loadSessionsBtn.disabled = false;
+    } finally {
+      showSpinner(false);
     }
 
     state.player = playerInput.value.trim();
@@ -253,13 +412,27 @@ function prepareGame(results) {
   state.top10 = results.slice(0, 10);
 
   const entrantsByTeam = new Map();
+  const driverNumbersMap = new Map();
+  const teamColors = new Map();
+
   results.forEach((r) => {
     if (!entrantsByTeam.has(r.team)) entrantsByTeam.set(r.team, []);
     entrantsByTeam.get(r.team).push(r.driver);
+
+    const driverNumber = Number(r.driver_number ?? r.driverNumber ?? r.number ?? r.driver_no);
+    if (!Number.isNaN(driverNumber)) driverNumbersMap.set(r.driver, driverNumber);
+
+    const teamColor = normalizeHexColor(r.team_colour ?? r.team_color ?? r.teamColour);
+    if (teamColor) teamColors.set(r.team, teamColor);
   });
 
-  entrantsByTeam.forEach((drivers, team) => entrantsByTeam.set(team, [...new Set(drivers)].sort((a, b) => (driverNumbers[a] || 999) - (driverNumbers[b] || 999))));
+  entrantsByTeam.forEach((drivers, team) => entrantsByTeam.set(
+    team,
+    [...new Set(drivers)].sort((a, b) => (driverNumbersMap.get(a) || 999) - (driverNumbersMap.get(b) || 999))
+  ));
   state.entrantsByTeam = entrantsByTeam;
+  state.driverNumbers = driverNumbersMap;
+  state.teamColors = teamColors;
   state.teams = [...entrantsByTeam.keys()].sort(byTeamName);
 
   state.top10Teams = new Set(state.top10.map((r) => r.team));
@@ -327,7 +500,8 @@ function renderStage1() {
     if (state.stage1Eliminated.has(team)) card.classList.add("eliminated");
     if (!state.stage1Eliminated.has(team) && !state.stage1Confirmed.has(team)) card.classList.add("selectable");
     if (selected.has(team)) card.classList.add("selected");
-    card.innerHTML = `<h4>${team}</h4>${drivers.map((d) => `<p>#${driverNumbers[d] || "--"} ${d}</p>`).join("")}`;
+    card.innerHTML = `<h4>${team}</h4>${drivers.map((d) => `<p>#${getDriverNumber(d) || "--"} ${d}</p>`).join("")}`;
+    applyTeamCardStyle(card, team, state.stage1Eliminated.has(team));
 
     if (!state.stage1Eliminated.has(team) && !state.stage1Confirmed.has(team)) {
       card.addEventListener("click", () => {
@@ -384,6 +558,7 @@ function renderStage2() {
   teams.forEach((team) => {
     const card = document.createElement("div");
     card.className = "card";
+    applyTeamCardStyle(card, team);
     card.innerHTML = `<h4>${team}</h4>
       <label><input type="radio" name="${team}" value="1" ${guesses.get(team) === 1 ? "checked" : ""}/> 1 driver</label>
       <label><input type="radio" name="${team}" value="2" ${guesses.get(team) === 2 ? "checked" : ""}/> 2 drivers</label>`;
@@ -436,6 +611,7 @@ function renderStage3() {
     const drivers = state.entrantsByTeam.get(team) || [];
     const card = document.createElement("div");
     card.className = "card";
+    applyTeamCardStyle(card, team);
 
     if (count === 2) {
       const both = state.top10.filter((r) => r.team === team).map((r) => r.driver);
@@ -443,7 +619,7 @@ function renderStage3() {
       card.innerHTML = `<h4>${team}</h4><p>Auto: ${both.join(" & ")}</p>`;
     } else {
       card.innerHTML = `<h4>${team}</h4>${drivers
-        .map((d, i) => `<label><input type="radio" name="${team}" value="${d}" ${i === 0 ? "checked" : ""}/> #${driverNumbers[d] || "--"} ${d}</label>`)
+        .map((d, i) => `<label><input type="radio" name="${team}" value="${d}" ${i === 0 ? "checked" : ""}/> #${getDriverNumber(d) || "--"} ${d}</label>`)
         .join("")}`;
       guesses.set(team, drivers[0]);
       card.addEventListener("change", (e) => {
