@@ -51,18 +51,7 @@ async function fetchData(url, timeoutMs = 45000) {
 
   try {
     const res = await fetch(url, { signal: controller.signal });
-
-    if (!res.ok) {
-      let details = "";
-      try {
-        const body = await res.json();
-        details = body?.message || body?.error || "";
-      } catch {
-        // Ignore parse errors and fall back to status only.
-      }
-      throw new Error(details ? `Request failed: ${res.status} (${details})` : `Request failed: ${res.status}`);
-    }
-
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
     const data = await res.json();
     cache.set(url, data);
     return data;
@@ -96,24 +85,16 @@ function renderSetup(message = "") {
       <div><label for="playerName">Player name</label><input id="playerName" placeholder="e.g. Oliver"/></div>
       <div style="align-self:end;"><button id="loadSessionsBtn">Get Available F1 Sessions</button></div>
     </div>
-    <div id="sessionStep" class="hidden"></div>
-    <div id="setupSpinner" class="spinner hidden" aria-live="polite" aria-label="Loading"></div>
-  `;
-}
-
-function renderSessionStep() {
-  const sessionStep = document.getElementById("sessionStep");
-  sessionStep.innerHTML = `
-    <div class="grid-3" style="margin-top:0.75rem;">
+    <div id="sessionControls" class="grid-3 hidden" style="margin-top:0.75rem;">
       <div><label for="year">Year</label><select id="year"></select></div>
       <div><label for="round">Round</label><select id="round"></select></div>
       <div><label for="session">Session</label><select id="session"></select></div>
     </div>
-    <div class="grid-3" style="margin-top:0.75rem;">
+    <div id="startWrap" class="grid-3 hidden" style="margin-top:0.75rem;">
       <div></div><div></div><div style="align-self:end;"><button id="startBtn" disabled>Start Game</button></div>
     </div>
+    <div id="setupSpinner" class="spinner hidden" aria-live="polite" aria-label="Loading"></div>
   `;
-  sessionStep.classList.remove("hidden");
 }
 
 function formatRound(r) {
@@ -126,7 +107,8 @@ async function setupFlow() {
   const loadSessionsBtn = document.getElementById("loadSessionsBtn");
   const status = document.getElementById("setupStatus");
   const title = document.getElementById("setupTitle");
-  const sessionStep = document.getElementById("sessionStep");
+  const sessionControls = document.getElementById("sessionControls");
+  const startWrap = document.getElementById("startWrap");
   const spinner = document.getElementById("setupSpinner");
 
   let selectorsReady = false;
@@ -153,8 +135,6 @@ async function setupFlow() {
     status.textContent = "Waking the F1 backend and loading available sessions… this can take around 30-60 seconds.";
 
     try {
-      renderSessionStep();
-
       const yearSel = document.getElementById("year");
       const roundSel = document.getElementById("round");
       const sessionSel = document.getElementById("session");
@@ -195,6 +175,8 @@ async function setupFlow() {
       await loadRounds();
 
       title.textContent = "Pick a Session";
+      sessionControls.classList.remove("hidden");
+      startWrap.classList.remove("hidden");
       selectorsReady = true;
       status.textContent = "Sessions loaded. Select year, round and session, then tap Start Game.";
       updateStartBtnState();
@@ -205,12 +187,6 @@ async function setupFlow() {
         state.year = Number(yearSel.value);
         state.round = Number(roundSel.value);
         state.session = sessionSel.value;
-
-        if (!state.year || Number.isNaN(state.round) || !state.session) {
-          status.textContent = "Please select year, round and session before starting.";
-          updateStartBtnState();
-          return;
-        }
 
         renderScore();
         status.textContent = "Loading session data… this can take up to 2 minutes on free tier.";
@@ -242,12 +218,27 @@ async function setupFlow() {
         }
       });
     } catch (error) {
-      sessionStep.classList.add("hidden");
       status.textContent = `Could not load available sessions (${error.message}). Please try again.`;
       loadSessionsBtn.disabled = false;
     } finally {
       showSpinner(false);
     }
+    grid.appendChild(card);
+  });
+
+  const submit = document.getElementById("submitStage1");
+  submit.disabled = selected.size !== required;
+  submit.addEventListener("click", () => {
+    const pick = [...selected];
+    const wrong = pick.filter((t) => !state.top10Teams.has(t));
+    const correct = pick.filter((t) => state.top10Teams.has(t));
+    correct.forEach((t) => state.stage1Confirmed.add(t));
+    wrong.forEach((t) => state.stage1Eliminated.add(t));
+    state.stage1History.push(`Picked: ${pick.join(", ")} | Wrong: ${wrong.length || 0}`);
+    const solved = state.stage1Confirmed.size === required;
+    bumpSubmission(solved);
+    if (solved) state.stage = 2;
+    renderGame();
   });
 }
 
