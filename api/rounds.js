@@ -1,3 +1,4 @@
+// Required by frontend session loading.
 const BACKEND = 'https://f1-backend-78sj.onrender.com';
 
 export default async function handler(req, res) {
