@@ -1,4 +1,4 @@
-const backend = "https://f1-backend-78sj.onrender.com";
+const backend = "/api";
 
 const setupPanel = document.getElementById("setup-panel");
 const gamePanel = document.getElementById("game-panel");
