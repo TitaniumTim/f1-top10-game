@@ -195,8 +195,18 @@ async function setupFlow() {
 
         try {
           const results = await fetchData(`${backend}/session_results?year=${state.year}&round=${state.round}&session=${encodeURIComponent(state.session)}`, 120000);
-          if (!results || results.length < 10) throw new Error("Session does not have enough data.");
-          prepareGame(results);
+
+          const normalizedResults = Array.isArray(results)
+            ? results
+            : Array.isArray(results?.results)
+              ? results.results
+              : null;
+
+          if (!normalizedResults || normalizedResults.length < 10) {
+            throw new Error("Session does not have enough result data.");
+          }
+
+          prepareGame(normalizedResults);
           setupPanel.classList.add("hidden");
           gamePanel.classList.remove("hidden");
           state.stage = 1;
@@ -213,10 +223,30 @@ async function setupFlow() {
     } finally {
       showSpinner(false);
     }
+    grid.appendChild(card);
+  });
+
+  const submit = document.getElementById("submitStage1");
+  submit.disabled = selected.size !== required;
+  submit.addEventListener("click", () => {
+    const pick = [...selected];
+    const wrong = pick.filter((t) => !state.top10Teams.has(t));
+    const correct = pick.filter((t) => state.top10Teams.has(t));
+    correct.forEach((t) => state.stage1Confirmed.add(t));
+    wrong.forEach((t) => state.stage1Eliminated.add(t));
+    state.stage1History.push(`Picked: ${pick.join(", ")} | Wrong: ${wrong.length || 0}`);
+    const solved = state.stage1Confirmed.size === required;
+    bumpSubmission(solved);
+    if (solved) state.stage = 2;
+    renderGame();
   });
 }
 
 function prepareGame(results) {
+  if (!Array.isArray(results)) {
+    throw new Error("Unexpected session results format from backend");
+  }
+
   state.score = 100;
   state.submissions = 0;
   state.results = results;
