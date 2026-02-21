@@ -43,13 +43,26 @@ const state = {
 const byTeamName = (a, b) => a.localeCompare(b);
 const cache = new Map();
 
-async function fetchData(url) {
+async function fetchData(url, timeoutMs = 45000) {
   if (cache.has(url)) return cache.get(url);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-  const data = await res.json();
-  cache.set(url, data);
-  return data;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+    const data = await res.json();
+    cache.set(url, data);
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function bumpSubmission(isCorrect) {
@@ -66,7 +79,7 @@ function renderScore() {
 
 function renderSetup(message = "") {
   setupPanel.innerHTML = `
-    <h2>Pick a Session</h2>
+    <h2 id="setupTitle">Let's Get Started</h2>
     <p class="status" id="setupStatus">${message || "Enter your name, then load available sessions."}</p>
     <div class="grid-3">
       <div><label for="playerName">Player name</label><input id="playerName" placeholder="e.g. Oliver"/></div>
@@ -78,8 +91,9 @@ function renderSetup(message = "") {
       <div><label for="session">Session</label><select id="session"></select></div>
     </div>
     <div id="startWrap" class="grid-3 hidden" style="margin-top:0.75rem;">
-      <div></div><div></div><div style="align-self:end;"><button id="startBtn">Start Game</button></div>
+      <div></div><div></div><div style="align-self:end;"><button id="startBtn" disabled>Start Game</button></div>
     </div>
+    <div id="setupSpinner" class="spinner hidden" aria-live="polite" aria-label="Loading"></div>
   `;
 }
 
@@ -92,10 +106,14 @@ async function setupFlow() {
   const playerInput = document.getElementById("playerName");
   const loadSessionsBtn = document.getElementById("loadSessionsBtn");
   const status = document.getElementById("setupStatus");
+  const title = document.getElementById("setupTitle");
   const sessionControls = document.getElementById("sessionControls");
   const startWrap = document.getElementById("startWrap");
+  const spinner = document.getElementById("setupSpinner");
 
   let selectorsReady = false;
+
+  const showSpinner = (isBusy) => spinner.classList.toggle("hidden", !isBusy);
 
   loadSessionsBtn.addEventListener("click", async () => {
     if (!playerInput.value.trim()) {
@@ -107,12 +125,14 @@ async function setupFlow() {
     renderScore();
 
     if (selectorsReady) {
+      title.textContent = "Pick a Session";
       status.textContent = "Sessions are ready below. Pick your session and start.";
       return;
     }
 
     loadSessionsBtn.disabled = true;
-    status.textContent = "Waking the F1 backend and loading available sessions… this can take around 30 seconds.";
+    showSpinner(true);
+    status.textContent = "Waking the F1 backend and loading available sessions… this can take around 30-60 seconds.";
 
     try {
       const yearSel = document.getElementById("year");
@@ -120,34 +140,46 @@ async function setupFlow() {
       const sessionSel = document.getElementById("session");
       const startBtn = document.getElementById("startBtn");
 
-      const years = await fetchData(`${backend}/years`);
+      const updateStartBtnState = () => {
+        const ready = Boolean(yearSel.value) && Boolean(roundSel.value) && Boolean(sessionSel.value);
+        startBtn.disabled = !ready;
+      };
+
+      const years = await fetchData(`${backend}/years`, 60000);
       yearSel.innerHTML = "";
       years.forEach((y) => yearSel.add(new Option(y, y)));
 
       async function loadRounds() {
         roundSel.innerHTML = "";
         sessionSel.innerHTML = "";
-        const rounds = await fetchData(`${backend}/rounds?year=${yearSel.value}`);
+        updateStartBtnState();
+        const rounds = await fetchData(`${backend}/rounds?year=${yearSel.value}`, 60000);
         rounds.forEach((r) => roundSel.add(new Option(formatRound(r), r.round)));
         await loadSessions();
       }
 
       async function loadSessions() {
         sessionSel.innerHTML = "";
-        const sessions = await fetchData(`${backend}/sessions?year=${yearSel.value}&round=${roundSel.value}`);
+        updateStartBtnState();
+        const sessions = await fetchData(`${backend}/sessions?year=${yearSel.value}&round=${roundSel.value}`, 60000);
         sessions
           .filter((s) => s.session_name && s.session_name !== "None")
           .forEach((s) => sessionSel.add(new Option(s.session_name, s.session_name)));
+        updateStartBtnState();
       }
 
       yearSel.addEventListener("change", () => loadRounds());
       roundSel.addEventListener("change", () => loadSessions());
+      sessionSel.addEventListener("change", () => updateStartBtnState());
+
       await loadRounds();
 
+      title.textContent = "Pick a Session";
       sessionControls.classList.remove("hidden");
       startWrap.classList.remove("hidden");
       selectorsReady = true;
       status.textContent = "Sessions loaded. Select year, round and session, then tap Start Game.";
+      updateStartBtnState();
 
       startBtn.addEventListener("click", async () => {
         if (!playerInput.value.trim()) return alert("Please enter your name first.");
@@ -157,11 +189,12 @@ async function setupFlow() {
         state.session = sessionSel.value;
 
         renderScore();
-        status.textContent = "Loading session data… this can take ~30 seconds on free tier.";
+        status.textContent = "Loading session data… this can take up to 2 minutes on free tier.";
         startBtn.disabled = true;
+        showSpinner(true);
 
         try {
-          const results = await fetchData(`${backend}/session_results?year=${state.year}&round=${state.round}&session=${encodeURIComponent(state.session)}`);
+          const results = await fetchData(`${backend}/session_results?year=${state.year}&round=${state.round}&session=${encodeURIComponent(state.session)}`, 120000);
           if (!results || results.length < 10) throw new Error("Session does not have enough data.");
           prepareGame(results);
           setupPanel.classList.add("hidden");
@@ -169,13 +202,16 @@ async function setupFlow() {
           state.stage = 1;
           renderGame();
         } catch (error) {
-          startBtn.disabled = false;
+          showSpinner(false);
           status.textContent = `Could not load that session yet (${error.message}). Please try another session.`;
+          updateStartBtnState();
         }
       });
     } catch (error) {
       status.textContent = `Could not load available sessions (${error.message}). Please try again.`;
       loadSessionsBtn.disabled = false;
+    } finally {
+      showSpinner(false);
     }
   });
 }
