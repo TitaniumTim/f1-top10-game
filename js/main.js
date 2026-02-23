@@ -22,6 +22,8 @@ const state = {
   top10TeamCounts: new Map(),
   top10SingleTeamDriver: new Map(),
   driverNumbers: new Map(),
+  driverAbbreviations: new Map(),
+  driverTeams: new Map(),
   teamColors: new Map(),
   stage1Confirmed: new Set(),
   stage1Eliminated: new Set(),
@@ -101,6 +103,45 @@ function getTeamColor(team) {
 
 function getDriverNumber(driver) {
   return state.driverNumbers.get(driver);
+}
+
+function getDriverAbbreviation(driver) {
+  return state.driverAbbreviations.get(driver) || driver;
+}
+
+function getDriverTeam(driver) {
+  return state.driverTeams.get(driver) || "";
+}
+
+function fallbackDriverAbbreviation(driver) {
+  if (!driver) return "---";
+  const cleaned = String(driver).trim().replace(/\./g, "");
+  if (!cleaned) return "---";
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  if (parts.length > 1) {
+    const last = parts[parts.length - 1];
+    return last.slice(0, 3).toUpperCase();
+  }
+  return cleaned.slice(0, 3).toUpperCase();
+}
+
+function formatDriverTag(driver) {
+  const number = getDriverNumber(driver);
+  const tag = getDriverAbbreviation(driver);
+  return `#${number || "--"} ${tag}`;
+}
+
+function createStage4DriverCard(driver, options = {}) {
+  const { asButton = false, draggable = false } = options;
+  const node = document.createElement(asButton ? "button" : "div");
+  node.className = `driver-token${asButton ? " driver-token-btn" : ""}`;
+  node.textContent = formatDriverTag(driver);
+  node.dataset.driver = driver;
+  if (draggable) node.draggable = true;
+
+  const team = getDriverTeam(driver);
+  if (team) applyTeamCardStyle(node, team);
+  return node;
 }
 
 function applyTeamCardStyle(card, team, subdued = false) {
@@ -512,14 +553,20 @@ function prepareGame(results) {
 
   const entrantsByTeam = new Map();
   const driverNumbersMap = new Map();
+  const driverAbbreviationsMap = new Map();
+  const driverTeamsMap = new Map();
   const teamColors = new Map();
 
   results.forEach((r) => {
     if (!entrantsByTeam.has(r.team)) entrantsByTeam.set(r.team, []);
     entrantsByTeam.get(r.team).push(r.driver);
+    driverTeamsMap.set(r.driver, r.team);
 
     const driverNumber = Number(r.driver_number ?? r.driverNumber ?? r.number ?? r.driver_no);
     if (!Number.isNaN(driverNumber)) driverNumbersMap.set(r.driver, driverNumber);
+
+    const abbreviation = ((r.driver_code ?? r.driverCode ?? r.code ?? r.driver_abbreviation ?? r.driverAbbreviation) || "").trim();
+    driverAbbreviationsMap.set(r.driver, abbreviation || fallbackDriverAbbreviation(r.driver));
 
     const teamColor = normalizeHexColor(r.team_colour ?? r.team_color ?? r.teamColour);
     if (teamColor) teamColors.set(r.team, teamColor);
@@ -531,6 +578,8 @@ function prepareGame(results) {
   ));
   state.entrantsByTeam = entrantsByTeam;
   state.driverNumbers = driverNumbersMap;
+  state.driverAbbreviations = driverAbbreviationsMap;
+  state.driverTeams = driverTeamsMap;
   state.teamColors = teamColors;
   state.teams = [...entrantsByTeam.keys()].sort(byTeamName);
 
@@ -747,7 +796,9 @@ function renderStage3() {
 }
 
 function getStage4Pool() {
-  return state.top10.map((r) => r.driver);
+  return [...state.top10]
+    .sort((a, b) => (getDriverNumber(a.driver) || 999) - (getDriverNumber(b.driver) || 999))
+    .map((r) => r.driver);
 }
 
 function renderStage4() {
@@ -759,7 +810,7 @@ function renderStage4() {
   const currentRound = state.stage4Guesses[state.stage4Guesses.length - 1];
 
   gamePanel.innerHTML = `
-    ${stageHeader("Stage 4: Put the Top 10 in Order", "Click a driver from the pool to fill the next available slot. Correct slots lock in place.")}
+    ${stageHeader("Stage 4: Put the Top 10 in Order", "Drag drivers between pool and board, or click a pool card to place it in the next open slot. Correct slots lock in place.")}
     <div class="inline-list" id="driverPool"></div>
     <div class="board-wrap"><div class="board" id="board"></div></div>
     <button id="submitS4" disabled>Submit Order</button>
@@ -767,28 +818,38 @@ function renderStage4() {
   `;
 
   const poolDiv = document.getElementById("driverPool");
-  let selectedDriver = null;
+  const getCurrentPoolDrivers = () => pool
+    .filter((driver) => ![...state.stage4Locked.values()].includes(driver) && !currentRound.includes(driver));
 
-  pool.forEach((driver) => {
-    const btn = document.createElement("button");
-    btn.className = "badge";
-    btn.style.width = "auto";
-    btn.textContent = driver;
-    btn.disabled = [...state.stage4Locked.values()].includes(driver) || currentRound.includes(driver);
-    btn.addEventListener("click", () => {
-      selectedDriver = driver;
-      fillNext();
+  function handleDropOnPool(event) {
+    event.preventDefault();
+    const sourceIdxRaw = event.dataTransfer.getData("text/source-index");
+    const sourceIdx = Number(sourceIdxRaw);
+    if (Number.isNaN(sourceIdx)) return;
+    if (state.stage4Locked.has(sourceIdx)) return;
+    currentRound[sourceIdx] = "";
+    renderStage4();
+  }
+
+  poolDiv.addEventListener("dragover", (event) => event.preventDefault());
+  poolDiv.addEventListener("drop", handleDropOnPool);
+
+  getCurrentPoolDrivers().forEach((driver) => {
+    const card = createStage4DriverCard(driver, { asButton: true, draggable: true });
+    card.addEventListener("click", () => fillNext(driver));
+    card.addEventListener("dragstart", (event) => {
+      event.dataTransfer.setData("text/driver", driver);
+      event.dataTransfer.setData("text/source-index", "pool");
     });
-    poolDiv.appendChild(btn);
+    poolDiv.appendChild(card);
   });
 
-  function fillNext() {
-    if (!selectedDriver) return;
+  function fillNext(driver) {
+    if (!driver) return;
     for (let i = 0; i < 10; i += 1) {
       if (state.stage4Locked.has(i)) continue;
       if (!currentRound[i]) {
-        currentRound[i] = selectedDriver;
-        selectedDriver = null;
+        currentRound[i] = driver;
         return renderStage4();
       }
     }
@@ -809,8 +870,52 @@ function renderStage4() {
       const slot = document.createElement("div");
       slot.className = "slot";
       if (state.stage4Locked.has(i)) slot.classList.add("good");
+      if (idx !== state.stage4Guesses.length - 1) slot.classList.add("history-slot");
       if (idx === state.stage4Guesses.length - 1 && !state.stage4Locked.has(i)) slot.classList.add("current");
-      slot.textContent = guess[i] || "—";
+      if (idx === state.stage4Guesses.length - 1 && !state.stage4Locked.has(i)) {
+        slot.addEventListener("dragover", (event) => event.preventDefault());
+        slot.addEventListener("drop", (event) => {
+          event.preventDefault();
+          const driver = event.dataTransfer.getData("text/driver");
+          const source = event.dataTransfer.getData("text/source-index");
+          if (!driver || state.stage4Locked.has(i)) return;
+
+          const sourceIdx = Number(source);
+          if (!Number.isNaN(sourceIdx) && sourceIdx !== i && !state.stage4Locked.has(sourceIdx)) {
+            const displaced = currentRound[i];
+            currentRound[i] = driver;
+            currentRound[sourceIdx] = displaced || "";
+          } else {
+            const existingIdx = currentRound.findIndex((d, idx2) => d === driver && idx2 !== i && !state.stage4Locked.has(idx2));
+            if (existingIdx >= 0) {
+              const displaced = currentRound[i];
+              currentRound[i] = driver;
+              currentRound[existingIdx] = displaced || "";
+            } else {
+              currentRound[i] = driver;
+            }
+          }
+          renderStage4();
+        });
+      }
+
+      if (guess[i]) {
+        const token = createStage4DriverCard(guess[i], {
+          draggable: idx === state.stage4Guesses.length - 1 && !state.stage4Locked.has(i)
+        });
+
+        if (token.draggable) {
+          token.addEventListener("dragstart", (event) => {
+            event.dataTransfer.setData("text/driver", guess[i]);
+            event.dataTransfer.setData("text/source-index", String(i));
+          });
+        }
+        slot.appendChild(token);
+      } else if (idx === state.stage4Guesses.length - 1 && !state.stage4Locked.has(i)) {
+        slot.textContent = "Drop here";
+      } else {
+        slot.textContent = state.stage4Locked.has(i) ? formatDriverTag(state.stage4Locked.get(i)) : "";
+      }
       col.appendChild(slot);
     }
     board.appendChild(col);
