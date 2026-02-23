@@ -31,11 +31,48 @@ const state = {
   stage3Resolved: new Map(),
   stage3History: [],
   stage4Locked: new Map(),
-  stage4Guesses: []
+  stage4Guesses: [],
+  backendHealth: { status: "checking", message: "Checking backend status…" }
 };
 
 const byTeamName = (a, b) => a.localeCompare(b);
 const cache = new Map();
+const inFlightRequests = new Map();
+const selectionControllers = {
+  rounds: null,
+  sessions: null
+};
+const CACHE_TTL_MS = {
+  default: 45_000,
+  years: 5 * 60_000,
+  rounds: 2 * 60_000,
+  sessions: 90_000,
+  sessionResults: 30_000
+};
+
+function logTelemetry(level, event, details = {}) {
+  const payload = { event, ts: new Date().toISOString(), ...details };
+  const logger = console[level] || console.log;
+  logger(`[telemetry] ${event}`, payload);
+}
+
+function getSessionKey(year, round, session) {
+  return `${year}::${round}::${session}`;
+}
+
+function readCache(key) {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    cache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function writeCache(key, data, ttl = CACHE_TTL_MS.default) {
+  cache.set(key, { data, expiresAt: Date.now() + ttl });
+}
 
 function normalizeHexColor(value) {
   if (!value || typeof value !== "string") return null;
@@ -74,14 +111,42 @@ function applyTeamCardStyle(card, team, subdued = false) {
   }
 }
 
-async function fetchData(url, timeoutMs = 45000) {
-  if (cache.has(url)) return cache.get(url);
+async function fetchData(url, options = {}) {
+  const {
+    timeoutMs = 45000,
+    method = "GET",
+    body,
+    headers = {},
+    cacheKey = url,
+    cacheTtlMs = CACHE_TTL_MS.default,
+    skipCache = false,
+    dedupeKey = `${method}:${url}`,
+    signal
+  } = options;
+
+  if (!skipCache && method === "GET") {
+    const cached = readCache(cacheKey);
+    if (cached) return cached;
+  }
+
+  if (inFlightRequests.has(dedupeKey)) return inFlightRequests.get(dedupeKey);
 
   const controller = new AbortController();
+  let abortedByCaller = false;
+  const onAbort = () => {
+    abortedByCaller = true;
+    controller.abort();
+  };
+  signal?.addEventListener("abort", onAbort);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  try {
-    const res = await fetch(url, { signal: controller.signal });
+  const requestPromise = (async () => {
+    const res = await fetch(url, {
+      method,
+      body,
+      headers,
+      signal: controller.signal
+    });
 
     if (!res.ok) {
       let details = "";
@@ -91,19 +156,98 @@ async function fetchData(url, timeoutMs = 45000) {
       } catch {
         // Ignore parse errors and fall back to status only.
       }
-      throw new Error(details ? `Request failed: ${res.status} (${details})` : `Request failed: ${res.status}`);
+      const error = new Error(details ? `Request failed: ${res.status} (${details})` : `Request failed: ${res.status}`);
+      error.status = res.status;
+      throw error;
     }
 
     const data = await res.json();
-    cache.set(url, data);
+    if (method === "GET" && !skipCache) writeCache(cacheKey, data, cacheTtlMs);
     return data;
-  } catch (error) {
-    if (error.name === "AbortError") {
-      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+  })()
+    .catch((error) => {
+      if (error.name === "AbortError") {
+        if (abortedByCaller) {
+          const cancelledError = new Error("Request cancelled");
+          cancelledError.code = "CANCELLED";
+          throw cancelledError;
+        }
+        const timeoutError = new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+        timeoutError.code = "TIMEOUT";
+        throw timeoutError;
+      }
+      throw error;
+    })
+    .finally(() => {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
+      inFlightRequests.delete(dedupeKey);
+    });
+
+  inFlightRequests.set(dedupeKey, requestPromise);
+  return requestPromise;
+}
+
+const api = {
+  health: () => fetchData(`${backend}/health`, { timeoutMs: 20_000, cacheTtlMs: 10_000 }),
+  years: () => fetchData(`${backend}/years`, { timeoutMs: 60_000, cacheTtlMs: CACHE_TTL_MS.years }),
+  rounds: (year, signal) => fetchData(`${backend}/rounds?year=${year}`, {
+    timeoutMs: 60_000,
+    cacheKey: `rounds:${year}`,
+    cacheTtlMs: CACHE_TTL_MS.rounds,
+    dedupeKey: `rounds:${year}`,
+    signal
+  }),
+  sessions: (year, round, signal) => fetchData(`${backend}/sessions?year=${year}&round=${round}`, {
+    timeoutMs: 60_000,
+    cacheKey: `sessions:${year}:${round}`,
+    cacheTtlMs: CACHE_TTL_MS.sessions,
+    dedupeKey: `sessions:${year}:${round}`,
+    signal
+  }),
+  sessionResults: (year, round, session, opts = {}) => {
+    const key = getSessionKey(year, round, session);
+    return fetchData(`${backend}/session_results?year=${year}&round=${round}&session=${encodeURIComponent(session)}`, {
+      timeoutMs: 120_000,
+      cacheKey: `session_results:${key}`,
+      cacheTtlMs: CACHE_TTL_MS.sessionResults,
+      dedupeKey: `session_results:${key}`,
+      skipCache: opts.skipCache
+    });
+  },
+  refreshSessionResults: (year, round, session) => {
+    const key = getSessionKey(year, round, session);
+    cache.delete(`session_results:${key}`);
+    return fetchData(`${backend}/refresh_session_results?year=${year}&round=${round}&session=${encodeURIComponent(session)}`, {
+      method: "POST",
+      timeoutMs: 120_000,
+      dedupeKey: `refresh_session_results:${key}`,
+      skipCache: true
+    });
+  }
+};
+
+function isRecoverableSessionLoadError(error) {
+  return error?.status === 502 || error?.code === "TIMEOUT" || /network|fetch|timed out/i.test(error?.message || "");
+}
+
+async function loadSessionResultsWithRefresh(year, round, session) {
+  try {
+    return await api.sessionResults(year, round, session);
+  } catch (firstError) {
+    if (!isRecoverableSessionLoadError(firstError)) throw firstError;
+    logTelemetry("warn", "session_results_initial_failure", { year, round, session, message: firstError.message });
+
+    try {
+      await api.refreshSessionResults(year, round, session);
+    } catch (refreshError) {
+      logTelemetry("error", "session_results_refresh_failure", { year, round, session, message: refreshError.message });
+      const e = new Error("Could not refresh latest data");
+      e.cause = refreshError;
+      throw e;
     }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
+
+    return api.sessionResults(year, round, session, { skipCache: true });
   }
 }
 
@@ -123,6 +267,7 @@ function renderSetup(message = "") {
   setupPanel.innerHTML = `
     <h2 id="setupTitle">Let's Get Started</h2>
     <p class="status" id="setupStatus">${message || "Enter your name, then load available sessions."}</p>
+    <p class="status" id="backendHealthStatus">Backend status: ${state.backendHealth.message}</p>
     <div class="grid-3">
       <div><label for="playerName">Player name</label><input id="playerName" placeholder="e.g. Oliver"/></div>
       <div style="align-self:end;"><button id="loadSessionsBtn">Get Available F1 Sessions</button></div>
@@ -141,10 +286,33 @@ function renderSessionStep() {
       <div><label for="session">Session</label><select id="session"></select></div>
     </div>
     <div class="grid-3" style="margin-top:0.75rem;">
-      <div></div><div></div><div style="align-self:end;"><button id="startBtn" disabled>Start Game</button></div>
+      <div><button id="refreshResultsBtn" disabled>Refresh latest results</button></div><div></div><div style="align-self:end;"><button id="startBtn" disabled>Start Game</button></div>
     </div>
   `;
   sessionStep.classList.remove("hidden");
+}
+
+function updateBackendHealthStatus() {
+  const node = document.getElementById("backendHealthStatus");
+  if (!node) return;
+  node.textContent = `Backend status: ${state.backendHealth.message}`;
+}
+
+async function checkBackendHealth() {
+  try {
+    const health = await api.health();
+    state.backendHealth = {
+      status: "up",
+      message: health?.status ? `Online (${health.status})` : "Online"
+    };
+  } catch (error) {
+    state.backendHealth = {
+      status: "degraded",
+      message: "Unavailable right now (cold start possible). You can still try loading sessions."
+    };
+    logTelemetry("warn", "health_check_failed", { message: error.message });
+  }
+  updateBackendHealthStatus();
 }
 
 function formatRound(r) {
@@ -159,6 +327,8 @@ async function setupFlow() {
   const title = document.getElementById("setupTitle");
   const sessionStep = document.getElementById("sessionStep");
   const spinner = document.getElementById("setupSpinner");
+
+  checkBackendHealth();
 
   let selectorsReady = false;
 
@@ -190,37 +360,67 @@ async function setupFlow() {
       const roundSel = document.getElementById("round");
       const sessionSel = document.getElementById("session");
       const startBtn = document.getElementById("startBtn");
+      const refreshBtn = document.getElementById("refreshResultsBtn");
 
       const updateStartBtnState = () => {
         const ready = Boolean(yearSel.value) && Boolean(roundSel.value) && Boolean(sessionSel.value);
         startBtn.disabled = !ready;
+        refreshBtn.disabled = !ready;
       };
 
-      const years = await fetchData(`${backend}/years`, 60000);
+      const years = await api.years();
       yearSel.innerHTML = "";
       years.forEach((y) => yearSel.add(new Option(y, y)));
 
       async function loadRounds() {
+        selectionControllers.rounds?.abort();
+        selectionControllers.rounds = new AbortController();
         roundSel.innerHTML = "";
         sessionSel.innerHTML = "";
         updateStartBtnState();
-        const rounds = await fetchData(`${backend}/rounds?year=${yearSel.value}`, 60000);
-        rounds.forEach((r) => roundSel.add(new Option(formatRound(r), r.round)));
-        await loadSessions();
+        try {
+          const rounds = await api.rounds(yearSel.value, selectionControllers.rounds.signal);
+          rounds.forEach((r) => roundSel.add(new Option(formatRound(r), r.round)));
+          await loadSessions();
+        } catch (error) {
+          if (error?.code === "CANCELLED") return;
+          throw error;
+        }
       }
 
       async function loadSessions() {
+        selectionControllers.sessions?.abort();
+        selectionControllers.sessions = new AbortController();
         sessionSel.innerHTML = "";
         updateStartBtnState();
-        const sessions = await fetchData(`${backend}/sessions?year=${yearSel.value}&round=${roundSel.value}`, 60000);
-        sessions
-          .filter((s) => s.session_name && s.session_name !== "None")
-          .forEach((s) => sessionSel.add(new Option(s.session_name, s.session_name)));
-        updateStartBtnState();
+        try {
+          const sessions = await api.sessions(yearSel.value, roundSel.value, selectionControllers.sessions.signal);
+          sessions
+            .filter((s) => s.session_name && s.session_name !== "None")
+            .forEach((s) => sessionSel.add(new Option(s.session_name, s.session_name)));
+          updateStartBtnState();
+        } catch (error) {
+          if (error?.code === "CANCELLED") return;
+          throw error;
+        }
       }
 
-      yearSel.addEventListener("change", () => loadRounds());
-      roundSel.addEventListener("change", () => loadSessions());
+      yearSel.addEventListener("change", async () => {
+        try {
+          await loadRounds();
+        } catch (error) {
+          status.textContent = `Could not reload rounds (${error.message}).`;
+          logTelemetry("error", "rounds_reload_failed", { year: yearSel.value, message: error.message });
+        }
+      });
+      roundSel.addEventListener("change", async () => {
+        try {
+          await loadSessions();
+        } catch (error) {
+          status.textContent = `Could not reload sessions (${error.message}).`;
+          logTelemetry("error", "sessions_reload_failed", { year: yearSel.value, round: roundSel.value, message: error.message });
+        }
+      });
       sessionSel.addEventListener("change", () => updateStartBtnState());
 
       await loadRounds();
@@ -229,6 +429,23 @@ async function setupFlow() {
       selectorsReady = true;
       status.textContent = "Sessions loaded. Select year, round and session, then tap Start Game.";
       updateStartBtnState();
+
+      refreshBtn.addEventListener("click", async () => {
+        updateStartBtnState();
+        refreshBtn.disabled = true;
+        showSpinner(true);
+        status.textContent = "Refreshing latest backend data…";
+        try {
+          await api.refreshSessionResults(Number(yearSel.value), Number(roundSel.value), sessionSel.value);
+          status.textContent = "Latest data refreshed. You can start the game now.";
+        } catch (error) {
+          logTelemetry("error", "manual_refresh_failed", { year: yearSel.value, round: roundSel.value, session: sessionSel.value, message: error.message });
+          status.textContent = "Could not refresh latest data.";
+        } finally {
+          showSpinner(false);
+          updateStartBtnState();
+        }
+      });
 
       startBtn.addEventListener("click", async () => {
         if (!playerInput.value.trim()) return alert("Please enter your name first.");
@@ -249,7 +466,7 @@ async function setupFlow() {
         showSpinner(true);
 
         try {
-          const results = await fetchData(`${backend}/session_results?year=${state.year}&round=${state.round}&session=${encodeURIComponent(state.session)}`, 120000);
+          const results = await loadSessionResultsWithRefresh(state.year, state.round, state.session);
 
           const normalizedResults = Array.isArray(results)
             ? results
@@ -267,6 +484,7 @@ async function setupFlow() {
           state.stage = 1;
           renderGame();
         } catch (error) {
+          logTelemetry("error", "start_game_failed", { year: state.year, round: state.round, session: state.session, message: error.message });
           showSpinner(false);
           status.textContent = `Could not load that session yet (${error.message}). Please try another session.`;
           updateStartBtnState();
@@ -279,7 +497,6 @@ async function setupFlow() {
     } finally {
       showSpinner(false);
     }
-    grid.appendChild(card);
   });
 }
 
