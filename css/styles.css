@@ -77,6 +77,29 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .slot.good { border-style: solid; border-color: var(--good); background: rgba(46,160,67,0.14); }
 .slot.bad { border-style: solid; border-color: var(--bad); }
 .slot.current { border-color: var(--warn); }
+.slot.history-slot { border-style: solid; border-color: #384453; }
+
+.driver-token {
+  width: 100%;
+  border: 1px solid #3d444d;
+  border-radius: 8px;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-align: left;
+  color: var(--text);
+  background: var(--panel-alt);
+}
+
+.driver-token-btn {
+  width: auto;
+  cursor: pointer;
+}
+
+.slot .driver-token {
+  margin: 0;
+}
 
 @media (max-width: 860px) {
   .grid-3 { grid-template-columns: 1fr; }
