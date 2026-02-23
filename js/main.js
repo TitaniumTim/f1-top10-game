@@ -814,7 +814,6 @@ function renderStage4() {
     <div class="inline-list" id="driverPool"></div>
     <div class="board-wrap"><div class="board" id="board"></div></div>
     <button id="submitS4" disabled>Submit Order</button>
-    ${renderPriorSummary()}
   `;
 
   const poolDiv = document.getElementById("driverPool");
@@ -914,7 +913,7 @@ function renderStage4() {
       } else if (idx === state.stage4Guesses.length - 1 && !state.stage4Locked.has(i)) {
         slot.textContent = "Drop here";
       } else {
-        slot.textContent = state.stage4Locked.has(i) ? formatDriverTag(state.stage4Locked.get(i)) : "";
+        slot.textContent = "";
       }
       col.appendChild(slot);
     }
@@ -943,9 +942,7 @@ function renderStage4() {
       return renderGame();
     }
 
-    const next = Array(10).fill("");
-    state.stage4Locked.forEach((driver, i) => { next[i] = driver; });
-    state.stage4Guesses.push(next);
+    state.stage4Guesses.push(Array(10).fill(""));
     renderGame();
   });
 }

@@ -60,19 +60,21 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .board {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 160px;
+  grid-auto-columns: 120px;
   gap: 0.5rem;
   align-items: start;
 }
-.board-col { border: 1px solid #3d444d; border-radius: 10px; padding: 0.4rem; background: #131920; }
-.board-col h5 { margin: 0 0 0.4rem; }
+.board-col { border: 1px solid #3d444d; border-radius: 10px; padding: 0.35rem; background: #131920; }
+.board-col h5 { margin: 0 0 0.35rem; font-size: 0.78rem; }
 .slot {
   border: 1px dashed #4b5563;
   border-radius: 8px;
-  min-height: 32px;
-  margin-bottom: 0.3rem;
-  padding: 0.2rem 0.35rem;
-  font-size: 0.82rem;
+  height: 34px;
+  margin-bottom: 0.25rem;
+  padding: 0.12rem 0.22rem;
+  font-size: 0.74rem;
+  display: flex;
+  align-items: center;
 }
 .slot.good { border-style: solid; border-color: var(--good); background: rgba(46,160,67,0.14); }
 .slot.bad { border-style: solid; border-color: var(--bad); }
@@ -83,8 +85,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   width: 100%;
   border: 1px solid #3d444d;
   border-radius: 8px;
-  padding: 0.35rem 0.45rem;
-  font-size: 0.78rem;
+  padding: 0.2rem 0.28rem;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.03em;
   text-align: left;
@@ -94,11 +96,15 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .driver-token-btn {
   width: auto;
+  min-width: 72px;
   cursor: pointer;
 }
 
 .slot .driver-token {
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 860px) {
