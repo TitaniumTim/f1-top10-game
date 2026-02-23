@@ -801,7 +801,8 @@ function getStage4Pool() {
     .map((r) => r.driver);
 }
 
-function renderStage4() {
+function renderStage4(options = {}) {
+  const { finalBoard = false } = options;
   const pool = getStage4Pool();
   if (!state.stage4Guesses.length) {
     state.stage4Guesses.push(Array(10).fill(""));
@@ -813,7 +814,7 @@ function renderStage4() {
     ${stageHeader("Stage 4: Put the Top 10 in Order", "Drag drivers between pool and board, or click a pool card to place it in the next open slot. Correct slots lock in place.")}
     <div class="inline-list" id="driverPool"></div>
     <div class="board-wrap"><div class="board" id="board"></div></div>
-    <button id="submitS4" disabled>Submit Order</button>
+    ${finalBoard ? "" : '<button id="submitS4" disabled>Submit Order</button>'}
   `;
 
   const poolDiv = document.getElementById("driverPool");
@@ -830,16 +831,22 @@ function renderStage4() {
     renderStage4();
   }
 
-  poolDiv.addEventListener("dragover", (event) => event.preventDefault());
-  poolDiv.addEventListener("drop", handleDropOnPool);
+  if (!finalBoard) {
+    poolDiv.addEventListener("dragover", (event) => event.preventDefault());
+    poolDiv.addEventListener("drop", handleDropOnPool);
+  }
 
   getCurrentPoolDrivers().forEach((driver) => {
-    const card = createStage4DriverCard(driver, { asButton: true, draggable: true });
-    card.addEventListener("click", () => fillNext(driver));
-    card.addEventListener("dragstart", (event) => {
-      event.dataTransfer.setData("text/driver", driver);
-      event.dataTransfer.setData("text/source-index", "pool");
-    });
+    const card = createStage4DriverCard(driver, { asButton: true, draggable: !finalBoard });
+    if (!finalBoard) {
+      card.addEventListener("click", () => fillNext(driver));
+      card.addEventListener("dragstart", (event) => {
+        event.dataTransfer.setData("text/driver", driver);
+        event.dataTransfer.setData("text/source-index", "pool");
+      });
+    } else {
+      card.disabled = true;
+    }
     poolDiv.appendChild(card);
   });
 
@@ -871,7 +878,7 @@ function renderStage4() {
       if (state.stage4Locked.has(i)) slot.classList.add("good");
       if (idx !== state.stage4Guesses.length - 1) slot.classList.add("history-slot");
       if (idx === state.stage4Guesses.length - 1 && !state.stage4Locked.has(i)) slot.classList.add("current");
-      if (idx === state.stage4Guesses.length - 1 && !state.stage4Locked.has(i)) {
+      if (!finalBoard && idx === state.stage4Guesses.length - 1 && !state.stage4Locked.has(i)) {
         slot.addEventListener("dragover", (event) => event.preventDefault());
         slot.addEventListener("drop", (event) => {
           event.preventDefault();
@@ -900,7 +907,7 @@ function renderStage4() {
 
       if (guess[i]) {
         const token = createStage4DriverCard(guess[i], {
-          draggable: idx === state.stage4Guesses.length - 1 && !state.stage4Locked.has(i)
+          draggable: !finalBoard && idx === state.stage4Guesses.length - 1 && !state.stage4Locked.has(i)
         });
 
         if (token.draggable) {
@@ -910,7 +917,7 @@ function renderStage4() {
           });
         }
         slot.appendChild(token);
-      } else if (idx === state.stage4Guesses.length - 1 && !state.stage4Locked.has(i)) {
+      } else if (!finalBoard && idx === state.stage4Guesses.length - 1 && !state.stage4Locked.has(i)) {
         slot.textContent = "Drop here";
       } else {
         slot.textContent = "";
@@ -919,6 +926,8 @@ function renderStage4() {
     }
     board.appendChild(col);
   });
+
+  if (finalBoard) return;
 
   const canSubmit = currentRound.every((d, i) => state.stage4Locked.has(i) || d);
   document.getElementById("submitS4").disabled = !canSubmit;
@@ -948,12 +957,26 @@ function renderStage4() {
 }
 
 function renderFinish() {
-  gamePanel.innerHTML = `
-    <h2>🏁 Finished</h2>
-    <p>Congratulations ${state.player} — you scored <strong>${state.score}</strong> points.</p>
-    <p>Total submissions: <strong>${state.submissions}</strong>. Perfect game is 4 submissions for 100 points.</p>
-    <button id="playAgain">Play Another Session</button>
+  renderStage4({ finalBoard: true });
+
+  const overlay = document.createElement("div");
+  overlay.className = "finish-overlay";
+  overlay.innerHTML = `
+    <div class="finish-modal" role="dialog" aria-modal="true" aria-labelledby="finishTitle">
+      <h2 id="finishTitle">🏁 Finished</h2>
+      <p>Congratulations ${state.player} — you scored <strong>${state.score}</strong> points.</p>
+      <p>Total submissions: <strong>${state.submissions}</strong>. Perfect game is 4 submissions for 100 points.</p>
+      <div class="finish-actions">
+        <button id="dismissFinish">View Final Board</button>
+        <button id="playAgain">Play Another Session</button>
+      </div>
+    </div>
   `;
+  gamePanel.appendChild(overlay);
+
+  document.getElementById("dismissFinish").addEventListener("click", () => {
+    overlay.remove();
+  });
   document.getElementById("playAgain").addEventListener("click", () => location.reload());
 }
 

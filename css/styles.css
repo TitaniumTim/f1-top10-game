@@ -107,6 +107,35 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   text-overflow: ellipsis;
 }
 
+.finish-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(7, 10, 14, 0.72);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  z-index: 20;
+}
+
+.finish-modal {
+  width: min(560px, 100%);
+  background: linear-gradient(165deg, #1a222d, #111822);
+  border: 1px solid #3d444d;
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+}
+
+.finish-modal h2 {
+  margin-top: 0;
+}
+
+.finish-actions {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
 @media (max-width: 860px) {
   .grid-3 { grid-template-columns: 1fr; }
   .topbar { flex-direction: column; }
