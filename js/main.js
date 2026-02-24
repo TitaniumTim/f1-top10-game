@@ -34,6 +34,14 @@ const state = {
   stage3History: [],
   stage4Locked: new Map(),
   stage4Guesses: [],
+  stage1Guesses: [],
+  stage1Current: [],
+  stage2Attempts: [],
+  stage2Current: new Map(),
+  stage2Correction: null,
+  stage3Attempts: [],
+  stage3Current: new Map(),
+  pendingOverlay: null,
   backendHealth: { status: "checking", message: "Checking backend status…" }
 };
 
@@ -641,6 +649,14 @@ function prepareGame(results) {
   state.stage3History = [];
   state.stage4Locked = new Map();
   state.stage4Guesses = [];
+  state.stage1Guesses = [];
+  state.stage1Current = [];
+  state.stage2Attempts = [];
+  state.stage2Current = new Map();
+  state.stage2Correction = null;
+  state.stage3Attempts = [];
+  state.stage3Current = new Map();
+  state.pendingOverlay = null;
   renderScore();
 }
 
@@ -649,187 +665,297 @@ function stageHeader(title, help) {
 }
 
 function renderGame() {
+  if (state.pendingOverlay) return renderStageOverlay();
   if (state.stage === 1) return renderStage1();
   if (state.stage === 2) return renderStage2();
   if (state.stage === 3) return renderStage3();
+  if (state.stage === 3.5) return renderStage123Review();
   if (state.stage === 4) return renderStage4();
   renderFinish();
 }
 
-function renderPriorSummary() {
-  const teams = [...state.top10Teams].sort(byTeamName).map((t) => `${t} (${state.top10TeamCounts.get(t)})`).join(" · ");
-  const drivers = state.top10.map((r) => `${r.position}. ${r.driver}`).join(" | ");
-  return `
-    <div class="panel" style="padding:0.75rem;margin-top:0.75rem;">
-      <div class="history"><strong>Known so far:</strong> ${state.stage > 1 ? teams : "Teams not solved yet"}</div>
-      <div class="history"><strong>Driver pool:</strong> ${state.stage > 3 ? drivers : "Solved in Stage 3"}</div>
-    </div>
-  `;
+function createTeamCard(team, draggable = false) {
+  const card = document.createElement("button");
+  card.className = "driver-token driver-token-btn team-token";
+  card.type = "button";
+  if (draggable) card.draggable = true;
+  const drivers = (state.entrantsByTeam.get(team) || []).map((d) => `#${getDriverNumber(d) || "--"} ${getDriverAbbreviation(d)}`);
+  card.innerHTML = `<strong>${team}</strong><span>${drivers.join(" · ")}</span>`;
+  applyTeamCardStyle(card, team);
+  return card;
 }
+
+function renderStageOverlay() {
+  const { title, message, buttonText, onContinue } = state.pendingOverlay;
+  gamePanel.innerHTML = `<div class="board-wrap"><div class="board" id="stage123Board"></div></div>`;
+  renderStage123Board();
+  const overlay = document.createElement("div");
+  overlay.className = "finish-overlay";
+  overlay.innerHTML = `<div class="finish-modal"><h2>${title}</h2><p>${message}</p><p><strong>Score: ${state.score}/100</strong></p><button id="continueStages">${buttonText}</button></div>`;
+  gamePanel.appendChild(overlay);
+  document.getElementById("continueStages").addEventListener("click", () => {
+    state.pendingOverlay = null;
+    onContinue();
+    renderGame();
+  });
+}
+
+function renderStage123Board(options = {}) {
+  const { stage1Editable = false, stage2Editable = false, stage3Editable = false } = options;
+  const teams = [...state.top10Teams].sort(byTeamName);
+  const board = document.getElementById("stage123Board");
+  if (!board) return;
+  board.innerHTML = "";
+
+  const teamCol = document.createElement("div");
+  teamCol.className = "board-col";
+  teamCol.innerHTML = `<h5>Teams</h5>${teams.map((t) => `<div class="slot"><strong>${t}</strong></div>`).join("")}`;
+  board.appendChild(teamCol);
+
+  state.stage1Guesses.forEach((guess, idx) => {
+    const col = document.createElement("div");
+    col.className = "board-col";
+    col.innerHTML = `<h5>S1 Guess ${idx + 1}</h5>`;
+    teams.forEach((team) => {
+      const slot = document.createElement("div");
+      const selected = guess.teams.includes(team);
+      slot.className = `slot history-slot ${selected ? (state.top10Teams.has(team) ? "good" : "bad") : ""}`;
+      slot.textContent = selected ? "Selected" : "";
+      col.appendChild(slot);
+    });
+    board.appendChild(col);
+  });
+
+  if (stage1Editable) {
+    const col = document.createElement("div");
+    col.className = "board-col";
+    col.innerHTML = "<h5>S1 Current</h5>";
+    teams.forEach((team, teamRowIdx) => {
+      const slot = document.createElement("div");
+      slot.className = "slot current";
+      const i = state.stage1Current.indexOf(team);
+      if (i >= 0) {
+        slot.textContent = "Selected";
+        slot.addEventListener("click", () => {
+          state.stage1Current[i] = "";
+          renderStage1();
+        });
+      }
+      slot.addEventListener("dragover", (event) => event.preventDefault());
+      slot.addEventListener("drop", (event) => {
+        event.preventDefault();
+        const droppedTeam = event.dataTransfer.getData("text/team");
+        if (!droppedTeam) return;
+        const existing = state.stage1Current.indexOf(droppedTeam);
+        if (existing >= 0) state.stage1Current[existing] = "";
+        if (state.stage1Current[teamRowIdx]) {
+          const displaced = state.stage1Current[teamRowIdx];
+          state.stage1Current[teamRowIdx] = droppedTeam;
+          const firstEmpty = state.stage1Current.findIndex((v) => !v);
+          if (firstEmpty >= 0) state.stage1Current[firstEmpty] = displaced;
+        } else {
+          state.stage1Current[teamRowIdx] = droppedTeam;
+        }
+        renderStage1();
+      });
+      col.appendChild(slot);
+    });
+    board.appendChild(col);
+  }
+
+  state.stage2Attempts.forEach((attempt, idx) => {
+    const col = document.createElement("div");
+    col.className = "board-col";
+    col.innerHTML = `<h5>S2 Guess ${idx + 1}</h5>`;
+    teams.forEach((team) => {
+      const slot = document.createElement("div");
+      const ok = attempt.guesses.get(team) === state.top10TeamCounts.get(team);
+      slot.className = `slot history-slot ${ok ? "good" : "bad"}`;
+      slot.textContent = String(attempt.guesses.get(team));
+      col.appendChild(slot);
+    });
+    const total = [...attempt.guesses.values()].reduce((a, b) => a + b, 0);
+    col.innerHTML += `<div class="slot history-slot"><strong>Total: ${total}</strong></div>`;
+    board.appendChild(col);
+  });
+
+  if (state.stage2Correction) {
+    const col = document.createElement("div");
+    col.className = "board-col";
+    col.innerHTML = "<h5>S2 Correct</h5>";
+    teams.forEach((team) => {
+      const slot = document.createElement("div");
+      const corrected = state.stage2Correction.get(team);
+      const wrong = state.stage2Attempts.at(-1)?.guesses.get(team) !== corrected;
+      slot.className = `slot history-slot ${wrong ? "good" : ""}`;
+      slot.textContent = wrong ? String(corrected) : "";
+      col.appendChild(slot);
+    });
+    col.innerHTML += "<div class='slot history-slot good'><strong>Total: 10</strong></div>";
+    board.appendChild(col);
+  }
+
+  if (stage2Editable) {
+    const col = document.createElement("div");
+    col.className = "board-col";
+    col.innerHTML = "<h5>S2 Current</h5>";
+    teams.forEach((team) => {
+      const slot = document.createElement("div");
+      slot.className = "slot current stage-toggle-slot";
+      const checked = state.stage2Current.get(team) === 2;
+      slot.innerHTML = `<label class="tiny-toggle"><span>1</span><input type="checkbox" data-team="${team}" ${checked ? "checked" : ""}/><span>2</span></label>`;
+      col.appendChild(slot);
+    });
+    const total = [...state.stage2Current.values()].reduce((a, b) => a + b, 0);
+    col.innerHTML += `<div class="slot current"><strong>Total: ${total}</strong></div>`;
+    board.appendChild(col);
+  }
+
+  if (state.stage3Attempts.length) {
+    const last = state.stage3Attempts[state.stage3Attempts.length - 1];
+    const col = document.createElement("div");
+    col.className = "board-col";
+    col.innerHTML = "<h5>S3 Guess</h5>";
+    teams.forEach((team) => {
+      const slot = document.createElement("div");
+      if (state.top10TeamCounts.get(team) === 2) {
+        slot.className = "slot history-slot good";
+        slot.textContent = "Auto";
+      } else {
+        const guess = last.get(team);
+        const ok = guess === state.top10SingleTeamDriver.get(team);
+        slot.className = `slot history-slot ${ok ? "good" : "bad"}`;
+        slot.textContent = formatDriverTag(guess);
+      }
+      col.appendChild(slot);
+    });
+    board.appendChild(col);
+  }
+
+  if (stage3Editable) {
+    const col = document.createElement("div");
+    col.className = "board-col";
+    col.innerHTML = "<h5>S3 Current</h5>";
+    teams.forEach((team) => {
+      const slot = document.createElement("div");
+      slot.className = "slot current stage-toggle-slot";
+      if (state.top10TeamCounts.get(team) === 2) {
+        slot.textContent = "Both in top 10";
+      } else {
+        const drivers = state.entrantsByTeam.get(team) || [];
+        const current = state.stage3Current.get(team) || drivers[0];
+        const checked = current === drivers[1];
+        slot.innerHTML = `<label class="tiny-toggle"><span>${formatDriverTag(drivers[0])}</span><input type="checkbox" data-team="${team}" ${checked ? "checked" : ""}/><span>${formatDriverTag(drivers[1])}</span></label>`;
+      }
+      col.appendChild(slot);
+    });
+    board.appendChild(col);
+  }
+}
+
 
 function renderStage1() {
   const required = state.top10Teams.size;
-  gamePanel.innerHTML = `
-    ${stageHeader("Stage 1: Which Teams are in the Top 10?", `Select exactly ${required} teams. Wrong picks are greyed out; correct picks stay locked.`)}
-    <div class="inline-list"><span class="badge">Session: ${state.year} · Round ${state.round} · ${state.session}</span></div>
-    <div class="team-grid" id="teamGrid"></div>
-    <button id="submitStage1" disabled>Submit Teams</button>
-    <div class="history" id="history"></div>
-  `;
+  if (!state.stage1Current.length) state.stage1Current = Array(required).fill("");
+  gamePanel.innerHTML = `${stageHeader("Stage 1: Which Teams are in the Top 10?", `Pick ${required} teams. Cards show driver abbreviations.`)}<div class="inline-list" id="stage1Pool"></div><div class="board-wrap"><div class="board" id="stage123Board"></div></div><button id="submitStage1" disabled>Submit Teams</button>`;
+  renderStage123Board({ stage1Editable: true });
 
-  const selected = new Set([...state.stage1Confirmed]);
-  const grid = document.getElementById("teamGrid");
-
-  state.teams.forEach((team) => {
-    const drivers = state.entrantsByTeam.get(team) || [];
-    const card = document.createElement("div");
-    card.className = "card";
-    if (state.stage1Confirmed.has(team)) card.classList.add("locked");
-    if (state.stage1Eliminated.has(team)) card.classList.add("eliminated");
-    if (!state.stage1Eliminated.has(team) && !state.stage1Confirmed.has(team)) card.classList.add("selectable");
-    if (selected.has(team)) card.classList.add("selected");
-    card.innerHTML = `<h4>${team}</h4>${drivers.map((d) => `<p>#${getDriverNumber(d) || "--"} ${d}</p>`).join("")}`;
-    applyTeamCardStyle(card, team, state.stage1Eliminated.has(team));
-
-    if (!state.stage1Eliminated.has(team) && !state.stage1Confirmed.has(team)) {
-      card.addEventListener("click", () => {
-        if (selected.has(team)) selected.delete(team);
-        else if (selected.size < required) selected.add(team);
-        renderStage1WithSelection(selected);
-      });
-    }
-    grid.appendChild(card);
+  const poolDiv = document.getElementById("stage1Pool");
+  const poolTeams = state.teams.filter((team) => !state.stage1Current.includes(team)).sort(byTeamName);
+  poolTeams.forEach((team) => {
+    const card = createTeamCard(team, true);
+    card.addEventListener("dragstart", (event) => {
+      event.dataTransfer.setData("text/team", team);
+    });
+    card.addEventListener("click", () => {
+      const idx = state.stage1Current.findIndex((v) => !v);
+      if (idx >= 0) state.stage1Current[idx] = team;
+      renderStage1();
+    });
+    poolDiv.appendChild(card);
   });
-
-  const submit = document.getElementById("submitStage1");
-  submit.disabled = selected.size !== required;
-  submit.addEventListener("click", () => {
-    const pick = [...selected];
-    const wrong = pick.filter((t) => !state.top10Teams.has(t));
-    const correct = pick.filter((t) => state.top10Teams.has(t));
-    correct.forEach((t) => state.stage1Confirmed.add(t));
-    wrong.forEach((t) => state.stage1Eliminated.add(t));
-    state.stage1History.push(`Picked: ${pick.join(", ")} | Wrong: ${wrong.length || 0}`);
-    const solved = state.stage1Confirmed.size === required;
+  document.getElementById("submitStage1").disabled = state.stage1Current.some((v) => !v);
+  document.getElementById("submitStage1").addEventListener("click", () => {
+    const guess = [...state.stage1Current];
+    const solved = guess.filter((team) => state.top10Teams.has(team)).length === required;
+    state.stage1Guesses.push({ teams: guess });
     bumpSubmission(solved);
-    if (solved) state.stage = 2;
+    state.stage1Current = Array(required).fill("");
+    if (solved) {
+      state.stage = 2;
+      state.pendingOverlay = {
+        title: "Stage 1 Complete",
+        message: "Great work — you found all top-10 teams.",
+        buttonText: "Continue to Stage 2",
+        onContinue: () => {}
+      };
+    }
     renderGame();
   });
-
-  document.getElementById("history").innerHTML = state.stage1History.length
-    ? `<strong>Previous guesses</strong><ul>${state.stage1History.map((h) => `<li>${h}</li>`).join("")}</ul>` : "";
-}
-
-function renderStage1WithSelection(selected) {
-  const required = state.top10Teams.size;
-  const cards = [...document.querySelectorAll("#teamGrid .card")];
-  cards.forEach((c) => {
-    const team = c.querySelector("h4").textContent;
-    c.classList.toggle("selected", selected.has(team));
-  });
-  document.getElementById("submitStage1").disabled = selected.size !== required;
 }
 
 function renderStage2() {
   const teams = [...state.top10Teams].sort(byTeamName);
-  gamePanel.innerHTML = `
-    ${stageHeader("Stage 2: One or Two Drivers per Team?", "Set each team to 1 or 2 drivers. Total must equal 10.")}
-    <div id="s2Grid" class="team-grid"></div>
-    <div class="status">Current total: <strong id="totalS2">0</strong> / 10</div>
-    <button id="submitS2" disabled>Submit Stage 2</button>
-    <div class="history">${state.stage2History.length ? `<ul>${state.stage2History.map((h) => `<li>${h}</li>`).join("")}</ul>` : ""}</div>
-    ${renderPriorSummary()}
-  `;
-  const guesses = new Map(teams.map((t) => [t, state.stage2Resolved.get(t) || 1]));
-  const grid = document.getElementById("s2Grid");
-
-  teams.forEach((team) => {
-    const card = document.createElement("div");
-    card.className = "card";
-    applyTeamCardStyle(card, team);
-    card.innerHTML = `<h4>${team}</h4>
-      <label><input type="radio" name="${team}" value="1" ${guesses.get(team) === 1 ? "checked" : ""}/> 1 driver</label>
-      <label><input type="radio" name="${team}" value="2" ${guesses.get(team) === 2 ? "checked" : ""}/> 2 drivers</label>`;
-    card.addEventListener("change", (e) => {
-      guesses.set(team, Number(e.target.value));
-      refresh();
+  if (!state.stage2Current.size) teams.forEach((team) => state.stage2Current.set(team, 1));
+  gamePanel.innerHTML = `${stageHeader("Stage 2: One or Two Drivers per Team?", "Set each team to 1 or 2. Total must be 10.")}<div class="board-wrap"><div class="board" id="stage123Board"></div></div><button id="submitS2" disabled>Submit Stage 2</button>`;
+  renderStage123Board({ stage2Editable: true });
+  document.querySelectorAll("#stage123Board .tiny-toggle input[data-team]").forEach((input) => {
+    input.addEventListener("change", (event) => {
+      const team = event.target.dataset.team;
+      state.stage2Current.set(team, event.target.checked ? 2 : 1);
+      renderStage2();
     });
-    grid.appendChild(card);
   });
-
-  function refresh() {
-    const total = [...guesses.values()].reduce((a, b) => a + b, 0);
-    document.getElementById("totalS2").textContent = String(total);
-    document.getElementById("submitS2").disabled = total !== 10;
-  }
-
-  refresh();
+  const total = [...state.stage2Current.values()].reduce((a, b) => a + b, 0);
+  document.getElementById("submitS2").disabled = total !== 10;
   document.getElementById("submitS2").addEventListener("click", () => {
     let anyWrong = false;
-    teams.forEach((t) => {
-      const guessed = guesses.get(t);
-      const actual = state.top10TeamCounts.get(t);
-      if (guessed !== actual) anyWrong = true;
-      state.stage2Resolved.set(t, actual);
-    });
-    state.stage2History.push(`Submitted totals: ${teams.map((t) => `${t}=${guesses.get(t)}`).join(", ")}`);
+    teams.forEach((team) => { if (state.stage2Current.get(team) !== state.top10TeamCounts.get(team)) anyWrong = true; });
+    state.stage2Attempts.push({ guesses: new Map(state.stage2Current) });
+    state.stage2Correction = anyWrong ? new Map(teams.map((t) => [t, state.top10TeamCounts.get(t)])) : null;
     bumpSubmission(!anyWrong);
     state.stage = 3;
+    state.pendingOverlay = { title: "Stage 2 Complete", message: "Review your stage 2 marks.", buttonText: "Continue to Stage 3", onContinue: () => {} };
     renderGame();
   });
 }
 
 function renderStage3() {
   const teams = [...state.top10Teams].sort(byTeamName);
-  const singleTeams = teams.filter((t) => state.stage2Resolved.get(t) === 1);
-
-  gamePanel.innerHTML = `
-    ${stageHeader("Stage 3: Which Driver is in the Top 10?", "Teams with 2 drivers are auto-filled. Pick one driver for each 1-driver team.")}
-    <div class="driver-grid" id="s3Grid"></div>
-    <button id="submitS3" disabled>Submit Stage 3</button>
-    <div class="history">${state.stage3History.length ? `<ul>${state.stage3History.map((h) => `<li>${h}</li>`).join("")}</ul>` : ""}</div>
-    ${renderPriorSummary()}
-  `;
-
-  const guesses = new Map();
-  const grid = document.getElementById("s3Grid");
-
-  teams.forEach((team) => {
-    const count = state.stage2Resolved.get(team);
-    const drivers = state.entrantsByTeam.get(team) || [];
-    const card = document.createElement("div");
-    card.className = "card";
-    applyTeamCardStyle(card, team);
-
-    if (count === 2) {
-      const both = state.top10.filter((r) => r.team === team).map((r) => r.driver);
-      both.forEach((d) => state.stage3Resolved.set(`${team}:${d}`, d));
-      card.innerHTML = `<h4>${team}</h4><p>Auto: ${both.join(" & ")}</p>`;
-    } else {
-      card.innerHTML = `<h4>${team}</h4>${drivers
-        .map((d, i) => `<label><input type="radio" name="${team}" value="${d}" ${i === 0 ? "checked" : ""}/> #${getDriverNumber(d) || "--"} ${d}</label>`)
-        .join("")}`;
-      guesses.set(team, drivers[0]);
-      card.addEventListener("change", (e) => {
-        guesses.set(team, e.target.value);
-        document.getElementById("submitS3").disabled = [...guesses.values()].some((v) => !v);
-      });
-    }
-    grid.appendChild(card);
+  const singleTeams = teams.filter((t) => state.top10TeamCounts.get(t) === 1);
+  gamePanel.innerHTML = `${stageHeader("Stage 3: Which Driver from 1-driver teams?", "Switch toggles for teams with only one top-10 finisher.")}<div class="board-wrap"><div class="board" id="stage123Board"></div></div>${singleTeams.length ? '<button id="submitS3">Submit Stage 3</button>' : ''}`;
+  if (!state.stage3Current.size) singleTeams.forEach((team) => state.stage3Current.set(team, (state.entrantsByTeam.get(team) || [])[0]));
+  renderStage123Board({ stage3Editable: true });
+  document.querySelectorAll("#stage123Board .tiny-toggle input[data-team]").forEach((input) => {
+    input.addEventListener("change", (event) => {
+      const team = event.target.dataset.team;
+      const drivers = state.entrantsByTeam.get(team) || [];
+      state.stage3Current.set(team, event.target.checked ? drivers[1] : drivers[0]);
+      renderStage3();
+    });
   });
-
-  document.getElementById("submitS3").disabled = singleTeams.length > 0 && [...guesses.values()].some((v) => !v);
-
+  if (!singleTeams.length) {
+    state.stage = 3.5;
+    state.pendingOverlay = { title: "Stage 3 Auto-complete", message: "All teams had both drivers in the top 10, so only the final stage remains.", buttonText: "Continue", onContinue: () => {} };
+    return renderGame();
+  }
   document.getElementById("submitS3").addEventListener("click", () => {
     let anyWrong = false;
     singleTeams.forEach((team) => {
-      const guessed = guesses.get(team);
-      const actual = state.top10SingleTeamDriver.get(team);
-      if (guessed !== actual) anyWrong = true;
-      state.stage3Resolved.set(team, actual);
+      if (state.stage3Current.get(team) !== state.top10SingleTeamDriver.get(team)) anyWrong = true;
     });
-    state.stage3History.push(`Guessed: ${singleTeams.map((t) => `${t}=${guesses.get(t)}`).join(", ")}`);
+    state.stage3Attempts.push(new Map(state.stage3Current));
     bumpSubmission(!anyWrong);
+    state.stage = 3.5;
+    state.pendingOverlay = { title: "Stage 3 Complete", message: "Nice work. Review stages 1-3 then find the finishing order.", buttonText: "Continue", onContinue: () => {} };
+    renderGame();
+  });
+}
+
+function renderStage123Review() {
+  gamePanel.innerHTML = `${stageHeader("Stages 1-3 Summary", "Review all guesses, then move to the final board.")}<div class="board-wrap"><div class="board" id="stage123Board"></div></div><button id="toStage4">Find the Finishing Order!</button>`;
+  renderStage123Board();
+  document.getElementById("toStage4").addEventListener("click", () => {
     state.stage = 4;
     renderGame();
   });

@@ -178,3 +178,36 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 @keyframes spin {
   to { transform: translate(-50%, -50%) rotate(360deg); }
 }
+
+.team-token {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  align-items: flex-start;
+}
+
+.team-token span {
+  font-size: 0.65rem;
+  opacity: 0.88;
+}
+
+.stage-toggle-slot {
+  height: 38px;
+}
+
+.tiny-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  font-size: 0.62rem;
+  color: var(--text);
+  margin: 0;
+}
+
+.tiny-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
