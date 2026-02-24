@@ -131,6 +131,46 @@ function formatDriverTag(driver) {
   return `#${number || "--"} ${tag}`;
 }
 
+function formatInfoValue(value) {
+  if (value === null || value === undefined) return "N/A";
+  const text = String(value).trim();
+  if (!text) return "N/A";
+  return text.replace(/^0\s+days?\s+/i, "");
+}
+
+function getSessionType(sessionName) {
+  const label = String(sessionName || "").toLowerCase();
+  if (label.includes("qualifying") || label.includes("shootout")) return "qualifying";
+  if (label.includes("race") || label.includes("sprint") || label.includes("grand prix")) return "race";
+  if (label.includes("practice") || /^fp\d$/i.test(label)) return "practice";
+  return "unknown";
+}
+
+function getFinalInfoByDriver(driver) {
+  const result = state.top10.find((row) => row.driver === driver);
+  if (!result) return "N/A";
+
+  const sessionType = getSessionType(state.session);
+
+  if (sessionType === "practice") {
+    const laps = formatInfoValue(result.laps);
+    const lapTime = formatInfoValue(result.lap_time);
+    return `${laps} laps | Best: ${lapTime}`;
+  }
+
+  if (sessionType === "qualifying") {
+    return `Lap: ${formatInfoValue(result.lap_time)}`;
+  }
+
+  if (sessionType === "race") {
+    const isWinner = Number(result.position) === 1;
+    if (isWinner) return `Time: ${formatInfoValue(result.race_time)}`;
+    return `Gap: ${formatInfoValue(result.gap_to_winner)}`;
+  }
+
+  return "N/A";
+}
+
 function createStage4DriverCard(driver, options = {}) {
   const { asButton = false, draggable = false } = options;
   const node = document.createElement(asButton ? "button" : "div");
@@ -926,6 +966,22 @@ function renderStage4(options = {}) {
     }
     board.appendChild(col);
   });
+
+  if (finalBoard) {
+    const infoCol = document.createElement("div");
+    infoCol.className = "board-col";
+    infoCol.innerHTML = "<h5>Session Info</h5>";
+
+    pool.forEach((driver) => {
+      const info = getFinalInfoByDriver(driver);
+      const slot = document.createElement("div");
+      slot.className = "slot result-info-slot";
+      slot.innerHTML = `<div><div class="result-info-main">${info}</div></div>`;
+      infoCol.appendChild(slot);
+    });
+
+    board.appendChild(infoCol);
+  }
 
   if (finalBoard) return;
 
