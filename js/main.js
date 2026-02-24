@@ -131,6 +131,62 @@ function formatDriverTag(driver) {
   return `#${number || "--"} ${tag}`;
 }
 
+function firstPresentValue(record, keys = []) {
+  for (const key of keys) {
+    const value = record?.[key];
+    if (value !== null && value !== undefined && String(value).trim() !== "") return value;
+  }
+  return null;
+}
+
+function formatTimeLikeValue(value) {
+  if (value === null || value === undefined) return "—";
+  const text = String(value).trim();
+  if (!text) return "—";
+  return text.replace(/^0\s+days?\s+/i, "");
+}
+
+function getSessionType(sessionName) {
+  const label = String(sessionName || "").toLowerCase();
+  if (label.includes("qualifying") || label.includes("shootout")) return "qualifying";
+  if (label.includes("race") || label === "sprint" || label.includes("grand prix")) return "race";
+  if (label.includes("practice") || /^fp\d$/i.test(label)) return "practice";
+  return "unknown";
+}
+
+function getFinalInfoByDriver(driver) {
+  const result = state.top10.find((row) => row.driver === driver);
+  if (!result) return { main: "—", detail: "" };
+
+  const sessionType = getSessionType(state.session);
+  if (sessionType === "practice") {
+    const laps = firstPresentValue(result, ["laps", "laps_completed", "lapsCompleted", "lap_count", "number_of_laps"]);
+    const fastest = firstPresentValue(result, ["fastest_lap_time", "fastestLapTime", "best_lap_time", "bestLapTime", "lap_time", "time"]);
+    return {
+      main: `${laps ?? "—"} laps`,
+      detail: formatTimeLikeValue(fastest)
+    };
+  }
+
+  if (sessionType === "qualifying") {
+    const lapTime = firstPresentValue(result, ["time", "lap_time", "best_lap_time", "bestLapTime", "q3", "q2", "q1"]);
+    return { main: formatTimeLikeValue(lapTime), detail: "" };
+  }
+
+  if (sessionType === "race") {
+    const isWinner = Number(result.position) === 1;
+    if (isWinner) {
+      const raceTime = firstPresentValue(result, ["time", "race_time", "raceTime", "total_time", "totalTime"]);
+      return { main: formatTimeLikeValue(raceTime), detail: "" };
+    }
+    const gap = firstPresentValue(result, ["gap", "interval", "delta", "delta_to_leader", "time"]);
+    const formattedGap = formatTimeLikeValue(gap);
+    return { main: formattedGap.startsWith("+") ? formattedGap : `+${formattedGap}`, detail: "" };
+  }
+
+  return { main: formatTimeLikeValue(firstPresentValue(result, ["time", "lap_time", "fastest_lap_time"])), detail: "" };
+}
+
 function createStage4DriverCard(driver, options = {}) {
   const { asButton = false, draggable = false } = options;
   const node = document.createElement(asButton ? "button" : "div");
@@ -926,6 +982,22 @@ function renderStage4(options = {}) {
     }
     board.appendChild(col);
   });
+
+  if (finalBoard) {
+    const infoCol = document.createElement("div");
+    infoCol.className = "board-col";
+    infoCol.innerHTML = "<h5>Session Info</h5>";
+
+    pool.forEach((driver) => {
+      const info = getFinalInfoByDriver(driver);
+      const slot = document.createElement("div");
+      slot.className = "slot result-info-slot";
+      slot.innerHTML = `<div><div class="result-info-main">${info.main}</div>${info.detail ? `<div class="result-info-detail">${info.detail}</div>` : ""}</div>`;
+      infoCol.appendChild(slot);
+    });
+
+    board.appendChild(infoCol);
+  }
 
   if (finalBoard) return;
 
