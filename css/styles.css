@@ -262,3 +262,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .stage123-board {
   grid-auto-columns: 220px;
 }
+
+.stage-mini-col {
+  width: 170px;
+  min-width: 170px;
+}
