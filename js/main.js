@@ -131,60 +131,44 @@ function formatDriverTag(driver) {
   return `#${number || "--"} ${tag}`;
 }
 
-function firstPresentValue(record, keys = []) {
-  for (const key of keys) {
-    const value = record?.[key];
-    if (value !== null && value !== undefined && String(value).trim() !== "") return value;
-  }
-  return null;
-}
-
-function formatTimeLikeValue(value) {
-  if (value === null || value === undefined) return "—";
+function formatInfoValue(value) {
+  if (value === null || value === undefined) return "N/A";
   const text = String(value).trim();
-  if (!text) return "—";
+  if (!text) return "N/A";
   return text.replace(/^0\s+days?\s+/i, "");
 }
 
 function getSessionType(sessionName) {
   const label = String(sessionName || "").toLowerCase();
   if (label.includes("qualifying") || label.includes("shootout")) return "qualifying";
-  if (label.includes("race") || label === "sprint" || label.includes("grand prix")) return "race";
+  if (label.includes("race") || label.includes("sprint") || label.includes("grand prix")) return "race";
   if (label.includes("practice") || /^fp\d$/i.test(label)) return "practice";
   return "unknown";
 }
 
 function getFinalInfoByDriver(driver) {
   const result = state.top10.find((row) => row.driver === driver);
-  if (!result) return { main: "—", detail: "" };
+  if (!result) return "N/A";
 
   const sessionType = getSessionType(state.session);
+
   if (sessionType === "practice") {
-    const laps = firstPresentValue(result, ["laps", "laps_completed", "lapsCompleted", "lap_count", "number_of_laps"]);
-    const fastest = firstPresentValue(result, ["fastest_lap_time", "fastestLapTime", "best_lap_time", "bestLapTime", "lap_time", "time"]);
-    return {
-      main: `${laps ?? "—"} laps`,
-      detail: formatTimeLikeValue(fastest)
-    };
+    const laps = formatInfoValue(result.laps);
+    const lapTime = formatInfoValue(result.lap_time);
+    return `${laps} laps | Best: ${lapTime}`;
   }
 
   if (sessionType === "qualifying") {
-    const lapTime = firstPresentValue(result, ["time", "lap_time", "best_lap_time", "bestLapTime", "q3", "q2", "q1"]);
-    return { main: formatTimeLikeValue(lapTime), detail: "" };
+    return `Lap: ${formatInfoValue(result.lap_time)}`;
   }
 
   if (sessionType === "race") {
     const isWinner = Number(result.position) === 1;
-    if (isWinner) {
-      const raceTime = firstPresentValue(result, ["time", "race_time", "raceTime", "total_time", "totalTime"]);
-      return { main: formatTimeLikeValue(raceTime), detail: "" };
-    }
-    const gap = firstPresentValue(result, ["gap", "interval", "delta", "delta_to_leader", "time"]);
-    const formattedGap = formatTimeLikeValue(gap);
-    return { main: formattedGap.startsWith("+") ? formattedGap : `+${formattedGap}`, detail: "" };
+    if (isWinner) return `Time: ${formatInfoValue(result.race_time)}`;
+    return `Gap: ${formatInfoValue(result.gap_to_winner)}`;
   }
 
-  return { main: formatTimeLikeValue(firstPresentValue(result, ["time", "lap_time", "fastest_lap_time"])), detail: "" };
+  return "N/A";
 }
 
 function createStage4DriverCard(driver, options = {}) {
@@ -992,7 +976,7 @@ function renderStage4(options = {}) {
       const info = getFinalInfoByDriver(driver);
       const slot = document.createElement("div");
       slot.className = "slot result-info-slot";
-      slot.innerHTML = `<div><div class="result-info-main">${info.main}</div>${info.detail ? `<div class="result-info-detail">${info.detail}</div>` : ""}</div>`;
+      slot.innerHTML = `<div><div class="result-info-main">${info}</div></div>`;
       infoCol.appendChild(slot);
     });
 
