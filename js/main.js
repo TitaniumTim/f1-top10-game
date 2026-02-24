@@ -42,6 +42,7 @@ const state = {
   stage3Attempts: [],
   stage3Current: new Map(),
   pendingOverlay: null,
+  stage123TeamOrder: [],
   backendHealth: { status: "checking", message: "Checking backend status…" }
 };
 
@@ -657,6 +658,7 @@ function prepareGame(results) {
   state.stage3Attempts = [];
   state.stage3Current = new Map();
   state.pendingOverlay = null;
+  state.stage123TeamOrder = [];
   renderScore();
 }
 
@@ -684,10 +686,16 @@ function createTeamCard(team, draggable = false) {
   applyTeamCardStyle(card, team);
   return card;
 }
+function getStage123TeamOrder() {
+  if (state.stage123TeamOrder.length) return state.stage123TeamOrder;
+  return [...state.top10Teams].sort(byTeamName);
+}
+
+
 
 function renderStageOverlay() {
   const { title, message, buttonText, onContinue } = state.pendingOverlay;
-  gamePanel.innerHTML = `<div class="board-wrap"><div class="board" id="stage123Board"></div></div>`;
+  gamePanel.innerHTML = `<div class="board-wrap"><div id="stage123Board" class="board stage123-board"></div></div>`;
   renderStage123Board();
   const overlay = document.createElement("div");
   overlay.className = "finish-overlay";
@@ -703,7 +711,7 @@ function renderStageOverlay() {
 function renderStage123Board(options = {}) {
   const { stage1Editable = false, stage2Editable = false, stage3Editable = false } = options;
   const rowCount = state.top10Teams.size;
-  const rowTeams = [...state.top10Teams].sort(byTeamName);
+  const rowTeams = getStage123TeamOrder();
   const board = document.getElementById("stage123Board");
   if (!board) return;
   board.innerHTML = "";
@@ -792,7 +800,7 @@ function renderStage123Board(options = {}) {
       const slot = document.createElement("div");
       const ok = attempt.guesses.get(team) === state.top10TeamCounts.get(team);
       slot.className = `slot history-slot ${ok ? "good" : "bad"}`;
-      slot.textContent = `${team}: ${attempt.guesses.get(team)}`;
+      slot.textContent = String(attempt.guesses.get(team));
       col.appendChild(slot);
     });
     const total = [...attempt.guesses.values()].reduce((a, b) => a + b, 0);
@@ -809,7 +817,7 @@ function renderStage123Board(options = {}) {
       const corrected = state.stage2Correction.get(team);
       const wrong = state.stage2Attempts.at(-1)?.guesses.get(team) !== corrected;
       slot.className = `slot history-slot ${wrong ? "good" : ""}`;
-      slot.textContent = wrong ? `${team}: ${corrected}` : "";
+      slot.textContent = wrong ? String(corrected) : "";
       col.appendChild(slot);
     });
     col.innerHTML += "<div class='slot history-slot good'><strong>10</strong></div>";
@@ -824,7 +832,7 @@ function renderStage123Board(options = {}) {
       const slot = document.createElement("div");
       slot.className = "slot current stage-toggle-slot";
       const checked = state.stage2Current.get(team) === 2;
-      slot.innerHTML = `<div class="s2-row"><span class="s2-team">${team}</span><label class="switch"><input type="checkbox" data-team="${team}" ${checked ? "checked" : ""}/><span class="slider"></span></label><span class="s2-val">${checked ? 2 : 1}</span></div>`;
+      slot.innerHTML = `<div class="s2-row"><span class="s2-val">1</span><label class="switch"><input type="checkbox" data-team="${team}" ${checked ? "checked" : ""}/><span class="slider"></span></label><span class="s2-val">2</span></div>`;
       col.appendChild(slot);
     });
     const total = [...state.stage2Current.values()].reduce((a, b) => a + b, 0);
@@ -841,12 +849,12 @@ function renderStage123Board(options = {}) {
       const slot = document.createElement("div");
       if (state.top10TeamCounts.get(team) === 2) {
         slot.className = "slot history-slot good";
-        slot.textContent = `${team}: Auto`;
+        slot.textContent = "Auto";
       } else {
         const guess = last.get(team);
         const ok = guess === state.top10SingleTeamDriver.get(team);
         slot.className = `slot history-slot ${ok ? "good" : "bad"}`;
-        slot.textContent = `${team}: ${formatDriverTag(guess)}`;
+        slot.textContent = formatDriverTag(guess);
       }
       col.appendChild(slot);
     });
@@ -862,7 +870,7 @@ function renderStage123Board(options = {}) {
       const slot = document.createElement("div");
       slot.className = "slot current stage-toggle-slot";
       if (state.top10TeamCounts.get(team) === 2) {
-        slot.textContent = `${team}: Both in top 10`;
+        slot.textContent = "Both in top 10";
       } else {
         const drivers = state.entrantsByTeam.get(team) || [];
         const current = state.stage3Current.get(team) || drivers[0];
@@ -880,7 +888,7 @@ function renderStage123Board(options = {}) {
 function renderStage1() {
   const required = state.top10Teams.size;
   if (!state.stage1Current.length) state.stage1Current = Array(required).fill("");
-  gamePanel.innerHTML = `${stageHeader("Stage 1: Which Teams are in the Top 10?", `Pick ${required} teams. Cards show driver abbreviations.`)}<div class="inline-list" id="stage1Pool"></div><div class="board-wrap"><div class="board" id="stage123Board"></div></div><button id="submitStage1" disabled>Submit Teams</button>`;
+  gamePanel.innerHTML = `${stageHeader("Stage 1: Which Teams are in the Top 10?", `Pick ${required} teams. Cards show driver abbreviations.`)}<div class="inline-list" id="stage1Pool"></div><div class="board-wrap"><div id="stage123Board" class="board stage123-board"></div></div><button id="submitStage1" disabled>Submit Teams</button>`;
   renderStage123Board({ stage1Editable: true });
 
   const poolDiv = document.getElementById("stage1Pool");
@@ -905,6 +913,7 @@ function renderStage1() {
     bumpSubmission(solved);
     state.stage1Current = Array(required).fill("");
     if (solved) {
+      state.stage123TeamOrder = guess.filter((team) => state.top10Teams.has(team));
       state.stage = 2;
       state.pendingOverlay = {
         title: "Stage 1 Complete",
@@ -918,9 +927,9 @@ function renderStage1() {
 }
 
 function renderStage2() {
-  const teams = [...state.top10Teams].sort(byTeamName);
+  const teams = getStage123TeamOrder();
   if (!state.stage2Current.size) teams.forEach((team) => state.stage2Current.set(team, 1));
-  gamePanel.innerHTML = `${stageHeader("Stage 2: One or Two Drivers per Team?", "Set each team to 1 or 2. Total must be 10.")}<div class="board-wrap"><div class="board" id="stage123Board"></div></div><button id="submitS2" disabled>Submit Stage 2</button>`;
+  gamePanel.innerHTML = `${stageHeader("Stage 2: One or Two Drivers per Team?", "Set each team to 1 or 2. Total must be 10.")}<div class="board-wrap"><div id="stage123Board" class="board stage123-board"></div></div><button id="submitS2" disabled>Submit Stage 2</button>`;
   renderStage123Board({ stage2Editable: true });
   document.querySelectorAll("#stage123Board .switch input[data-team]").forEach((input) => {
     input.addEventListener("change", (event) => {
@@ -944,9 +953,9 @@ function renderStage2() {
 }
 
 function renderStage3() {
-  const teams = [...state.top10Teams].sort(byTeamName);
+  const teams = getStage123TeamOrder();
   const singleTeams = teams.filter((t) => state.top10TeamCounts.get(t) === 1);
-  gamePanel.innerHTML = `${stageHeader("Stage 3: Which Driver from 1-driver teams?", "Switch toggles for teams with only one top-10 finisher.")}<div class="board-wrap"><div class="board" id="stage123Board"></div></div>${singleTeams.length ? '<button id="submitS3">Submit Stage 3</button>' : ''}`;
+  gamePanel.innerHTML = `${stageHeader("Stage 3: Which Driver from 1-driver teams?", "Switch toggles for teams with only one top-10 finisher.")}<div class="board-wrap"><div id="stage123Board" class="board stage123-board"></div></div>${singleTeams.length ? '<button id="submitS3">Submit Stage 3</button>' : ''}`;
   if (!state.stage3Current.size) singleTeams.forEach((team) => state.stage3Current.set(team, (state.entrantsByTeam.get(team) || [])[0]));
   renderStage123Board({ stage3Editable: true });
   document.querySelectorAll("#stage123Board .switch input[data-team]").forEach((input) => {
@@ -976,7 +985,7 @@ function renderStage3() {
 }
 
 function renderStage123Review() {
-  gamePanel.innerHTML = `${stageHeader("Stages 1-3 Summary", "Review all guesses, then move to the final board.")}<div class="board-wrap"><div class="board" id="stage123Board"></div></div><button id="toStage4">Find the Finishing Order!</button>`;
+  gamePanel.innerHTML = `${stageHeader("Stages 1-3 Summary", "Review all guesses, then move to the final board.")}<div class="board-wrap"><div id="stage123Board" class="board stage123-board"></div></div><button id="toStage4">Find the Finishing Order!</button>`;
   renderStage123Board();
   document.getElementById("toStage4").addEventListener("click", () => {
     state.stage = 4;

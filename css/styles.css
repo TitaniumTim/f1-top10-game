@@ -257,3 +257,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .switch input:checked + .slider:before {
   transform: translateX(14px);
 }
+
+
+.stage123-board {
+  grid-auto-columns: 220px;
+}
