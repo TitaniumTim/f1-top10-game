@@ -26,6 +26,7 @@ const state = {
   driverTeams: new Map(),
   teamColors: new Map(),
   stage1Confirmed: new Set(),
+  stage1Locked: new Map(),
   stage1Eliminated: new Set(),
   stage1History: [],
   stage2Resolved: new Map(),
@@ -642,6 +643,7 @@ function prepareGame(results) {
   });
 
   state.stage1Confirmed = new Set();
+  state.stage1Locked = new Map();
   state.stage1Eliminated = new Set();
   state.stage1History = [];
   state.stage2Resolved = new Map();
@@ -718,6 +720,13 @@ function renderStage123Board(options = {}) {
 
   const addFooter = stage2Editable || state.stage2Attempts.length || state.stage2Correction;
 
+  const colorizeStageCell = (slot, team) => {
+    if (!team) return;
+    const color = getTeamColor(team);
+    slot.style.borderColor = color;
+    slot.style.background = `linear-gradient(135deg, ${toTint(color, 0.24)}, rgba(17,24,34,0.9) 70%)`;
+  };
+
   const indexCol = document.createElement("div");
   indexCol.className = "board-col";
   indexCol.innerHTML = `<h5>Top 10 Team</h5>${Array.from({ length: rowCount }, (_, i) => `<div class="slot">${i + 1}</div>`).join("")}${addFooter ? '<div class="slot">Total</div>' : ''}`;
@@ -725,7 +734,7 @@ function renderStage123Board(options = {}) {
 
   state.stage1Guesses.forEach((guess, idx) => {
     const col = document.createElement("div");
-    col.className = "board-col";
+    col.className = "board-col stage-mini-col";
     col.innerHTML = `<h5>S1 Guess ${idx + 1}</h5>`;
     for (let i = 0; i < rowCount; i += 1) {
       const team = guess.teams[i] || "";
@@ -749,17 +758,21 @@ function renderStage123Board(options = {}) {
     col.innerHTML = "<h5>S1 Current</h5>";
     for (let i = 0; i < rowCount; i += 1) {
       const slot = document.createElement("div");
-      slot.className = "slot current";
+      const locked = state.stage1Locked.has(i);
+      slot.className = `slot current ${locked ? "good" : ""}`;
       const team = state.stage1Current[i];
       if (team) {
         const token = createTeamCard(team, false);
         token.classList.remove("driver-token-btn");
         token.classList.add("driver-token-static");
-        token.addEventListener("click", () => {
-          state.stage1Current[i] = "";
-          renderStage1();
-        });
-        token.draggable = true;
+        const locked = state.stage1Locked.has(i);
+        if (!locked) {
+          token.addEventListener("click", () => {
+            state.stage1Current[i] = "";
+            renderStage1();
+          });
+          token.draggable = true;
+        }
         token.addEventListener("dragstart", (event) => {
           event.dataTransfer.setData("text/source-slot", String(i));
           event.dataTransfer.setData("text/team", team);
@@ -771,6 +784,7 @@ function renderStage123Board(options = {}) {
       slot.addEventListener("dragover", (event) => event.preventDefault());
       slot.addEventListener("drop", (event) => {
         event.preventDefault();
+        if (state.stage1Locked.has(i)) return;
         const fromSlotRaw = event.dataTransfer.getData("text/source-slot");
         const fromSlot = Number(fromSlotRaw);
         const droppedTeam = event.dataTransfer.getData("text/team");
@@ -801,6 +815,7 @@ function renderStage123Board(options = {}) {
       const ok = attempt.guesses.get(team) === state.top10TeamCounts.get(team);
       slot.className = `slot history-slot ${ok ? "good" : "bad"}`;
       slot.textContent = String(attempt.guesses.get(team));
+      colorizeStageCell(slot, team);
       col.appendChild(slot);
     });
     const total = [...attempt.guesses.values()].reduce((a, b) => a + b, 0);
@@ -810,7 +825,7 @@ function renderStage123Board(options = {}) {
 
   if (state.stage2Correction) {
     const col = document.createElement("div");
-    col.className = "board-col";
+    col.className = "board-col stage-mini-col";
     col.innerHTML = "<h5>S2 Correct</h5>";
     rowTeams.forEach((team) => {
       const slot = document.createElement("div");
@@ -818,6 +833,7 @@ function renderStage123Board(options = {}) {
       const wrong = state.stage2Attempts.at(-1)?.guesses.get(team) !== corrected;
       slot.className = `slot history-slot ${wrong ? "good" : ""}`;
       slot.textContent = wrong ? String(corrected) : "";
+      colorizeStageCell(slot, team);
       col.appendChild(slot);
     });
     col.innerHTML += "<div class='slot history-slot good'><strong>10</strong></div>";
@@ -826,13 +842,14 @@ function renderStage123Board(options = {}) {
 
   if (stage2Editable) {
     const col = document.createElement("div");
-    col.className = "board-col";
+    col.className = "board-col stage-mini-col";
     col.innerHTML = "<h5>S2 Current</h5>";
     rowTeams.forEach((team) => {
       const slot = document.createElement("div");
       slot.className = "slot current stage-toggle-slot";
       const checked = state.stage2Current.get(team) === 2;
       slot.innerHTML = `<div class="s2-row"><span class="s2-val">1</span><label class="switch"><input type="checkbox" data-team="${team}" ${checked ? "checked" : ""}/><span class="slider"></span></label><span class="s2-val">2</span></div>`;
+      colorizeStageCell(slot, team);
       col.appendChild(slot);
     });
     const total = [...state.stage2Current.values()].reduce((a, b) => a + b, 0);
@@ -843,7 +860,7 @@ function renderStage123Board(options = {}) {
   if (state.stage3Attempts.length) {
     const last = state.stage3Attempts[state.stage3Attempts.length - 1];
     const col = document.createElement("div");
-    col.className = "board-col";
+    col.className = "board-col stage-mini-col";
     col.innerHTML = "<h5>S3 Guess</h5>";
     rowTeams.forEach((team) => {
       const slot = document.createElement("div");
@@ -856,6 +873,7 @@ function renderStage123Board(options = {}) {
         slot.className = `slot history-slot ${ok ? "good" : "bad"}`;
         slot.textContent = formatDriverTag(guess);
       }
+      colorizeStageCell(slot, team);
       col.appendChild(slot);
     });
     if (addFooter) col.innerHTML += '<div class="slot"></div>';
@@ -864,7 +882,7 @@ function renderStage123Board(options = {}) {
 
   if (stage3Editable) {
     const col = document.createElement("div");
-    col.className = "board-col";
+    col.className = "board-col stage-mini-col";
     col.innerHTML = "<h5>S3 Current</h5>";
     rowTeams.forEach((team) => {
       const slot = document.createElement("div");
@@ -877,6 +895,7 @@ function renderStage123Board(options = {}) {
         const checked = current === drivers[1];
         slot.innerHTML = `<div class="s3-row"><span>${formatDriverTag(drivers[0])}</span><label class="switch"><input type="checkbox" data-team="${team}" ${checked ? "checked" : ""}/><span class="slider"></span></label><span>${formatDriverTag(drivers[1])}</span></div>`;
       }
+      colorizeStageCell(slot, team);
       col.appendChild(slot);
     });
     if (addFooter) col.innerHTML += '<div class="slot"></div>';
@@ -905,15 +924,24 @@ function renderStage1() {
     });
     poolDiv.appendChild(card);
   });
-  document.getElementById("submitStage1").disabled = state.stage1Current.some((v) => !v);
+  document.getElementById("submitStage1").disabled = state.stage1Current.some((team, idx) => !team && !state.stage1Locked.has(idx));
   document.getElementById("submitStage1").addEventListener("click", () => {
     const guess = [...state.stage1Current];
-    const solved = guess.filter((team) => state.top10Teams.has(team)).length === required;
+    let roundPerfect = true;
+    for (let i = 0; i < required; i += 1) {
+      if (state.stage1Locked.has(i)) continue;
+      if (state.top10Teams.has(guess[i])) {
+        state.stage1Locked.set(i, guess[i]);
+      } else {
+        roundPerfect = false;
+      }
+    }
+    const solved = state.stage1Locked.size === required;
     state.stage1Guesses.push({ teams: guess });
-    bumpSubmission(solved);
-    state.stage1Current = Array(required).fill("");
+    bumpSubmission(roundPerfect && solved);
+    state.stage1Current = Array.from({ length: required }, (_, idx) => state.stage1Locked.get(idx) || "");
     if (solved) {
-      state.stage123TeamOrder = guess.filter((team) => state.top10Teams.has(team));
+      state.stage123TeamOrder = Array.from({ length: required }, (_, idx) => state.stage1Locked.get(idx)).filter(Boolean);
       state.stage = 2;
       state.pendingOverlay = {
         title: "Stage 1 Complete",
