@@ -7,4 +7,7 @@ These files are required for production on Vercel because the frontend calls sam
 - `sessions.js` -> proxies `/sessions?year=...&round=...`
 - `session_results.js` -> proxies `/session_results?year=...&round=...&session=...`
 
-If these files are deleted, the frontend session picker will fail with a network error.
+- `health.js` -> proxies `/health`
+- `refresh_session_results.js` -> proxies `/refresh_session_results?year=...&round=...&session=...`
+
+If these files are deleted, setup health checks and manual refresh actions can fail with a network error.
