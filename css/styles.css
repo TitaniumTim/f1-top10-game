@@ -107,6 +107,24 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   text-overflow: ellipsis;
 }
 
+.result-info-slot {
+  min-height: 34px;
+  height: auto;
+  align-items: flex-start;
+}
+
+.result-info-main {
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.result-info-detail {
+  margin-top: 0.08rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.15;
+}
+
 .finish-overlay {
   position: absolute;
   inset: 0;
