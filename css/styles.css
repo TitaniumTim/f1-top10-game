@@ -178,3 +178,87 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 @keyframes spin {
   to { transform: translate(-50%, -50%) rotate(360deg); }
 }
+
+.team-token {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  align-items: flex-start;
+}
+
+.team-token span {
+  font-size: 0.65rem;
+  opacity: 0.88;
+}
+
+.stage-toggle-slot {
+  min-height: 34px;
+}
+
+.driver-token-static {
+  width: 100%;
+  cursor: pointer;
+}
+
+.s2-row, .s3-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+}
+
+.s2-team {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 56px;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 30px;
+  height: 16px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  background-color: #3d444d;
+  transition: .2s;
+  border-radius: 999px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 12px;
+  width: 12px;
+  left: 2px;
+  top: 2px;
+  background-color: white;
+  transition: .2s;
+  border-radius: 50%;
+}
+
+.switch input:checked + .slider {
+  background-color: var(--good);
+}
+
+.switch input:checked + .slider:before {
+  transform: translateX(14px);
+}
+
+
+.stage123-board {
+  grid-auto-columns: 220px;
+}
