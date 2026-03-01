@@ -872,6 +872,27 @@ function renderStage123Board(options = {}) {
     board.appendChild(col);
   }
 
+  state.stage3Attempts.forEach((attempt, idx) => {
+    const col = document.createElement("div");
+    col.className = "board-col stage-mini-col";
+    col.innerHTML = `<h5>S3 Guess ${idx + 1}</h5>`;
+    rowTeams.forEach((team) => {
+      const slot = document.createElement("div");
+      if (state.top10TeamCounts.get(team) === 2) {
+        slot.className = "slot history-slot good";
+        slot.textContent = "";
+      } else {
+        const guess = attempt.get(team);
+        const ok = guess === state.top10SingleTeamDriver.get(team);
+        slot.className = `slot history-slot ${ok ? "good" : "bad"}`;
+        slot.textContent = formatDriverTag(guess);
+      }
+      col.appendChild(slot);
+    });
+    if (addFooter) col.innerHTML += '<div class="slot"></div>';
+    board.appendChild(col);
+  });
+
   if (state.stage3Attempts.length) {
     const last = state.stage3Attempts[state.stage3Attempts.length - 1];
     const col = document.createElement("div");
