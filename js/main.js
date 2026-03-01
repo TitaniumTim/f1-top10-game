@@ -5,6 +5,7 @@ const gamePanel = document.getElementById("game-panel");
 const playerChip = document.getElementById("player-chip");
 const scoreChip = document.getElementById("score-chip");
 const submissionsChip = document.getElementById("submissions-chip");
+const backendFeedback = document.getElementById("backend-feedback");
 
 const state = {
   player: "",
@@ -13,6 +14,7 @@ const state = {
   stage: 0,
   year: null,
   round: null,
+  roundName: "",
   session: null,
   results: [],
   top10: [],
@@ -403,11 +405,21 @@ function renderScore() {
   submissionsChip.textContent = String(state.submissions);
 }
 
+function setBackendFeedback(message = "") {
+  if (!backendFeedback) return;
+  backendFeedback.textContent = message;
+}
+
+function getSessionDisplayLabel() {
+  if (!state.year || !state.round || !state.session) return "-";
+  const roundLabel = state.roundName || `Round ${state.round}`;
+  return `${state.year} · ${roundLabel} · ${state.session}`;
+}
+
 function renderSetup(message = "") {
   setupPanel.innerHTML = `
     <h2 id="setupTitle">Let's Get Started</h2>
     <p class="status" id="setupStatus">${message || "Enter your name, then load available sessions."}</p>
-    <p class="status" id="backendHealthStatus">Backend status: ${state.backendHealth.message}</p>
     <div class="grid-3">
       <div><label for="playerName">Player name</label><input id="playerName" placeholder="e.g. Oliver"/></div>
       <div style="align-self:end;"><button id="loadSessionsBtn">Get Available F1 Sessions</button></div>
@@ -433,9 +445,7 @@ function renderSessionStep() {
 }
 
 function updateBackendHealthStatus() {
-  const node = document.getElementById("backendHealthStatus");
-  if (!node) return;
-  node.textContent = `Backend status: ${state.backendHealth.message}`;
+  setBackendFeedback(`Backend status: ${state.backendHealth.message}`);
 }
 
 async function checkBackendHealth() {
@@ -473,10 +483,14 @@ async function setupFlow() {
   let selectorsReady = false;
 
   const showSpinner = (isBusy) => spinner.classList.toggle("hidden", !isBusy);
+  const setStatus = (message = "", backendMessage = "") => {
+    status.textContent = message;
+    setBackendFeedback(backendMessage);
+  };
 
   loadSessionsBtn.addEventListener("click", async () => {
     if (!playerInput.value.trim()) {
-      status.textContent = "Please enter your name first.";
+      setStatus("Please enter your name first.");
       return;
     }
 
@@ -485,13 +499,13 @@ async function setupFlow() {
 
     if (selectorsReady) {
       title.textContent = "Pick a Session";
-      status.textContent = "Sessions are ready below. Pick your session and start.";
+      setStatus("Sessions are ready below. Pick your session and start.");
       return;
     }
 
     loadSessionsBtn.disabled = true;
     showSpinner(true);
-    status.textContent = "Waking the F1 backend and loading available sessions… this can take around 30-60 seconds.";
+    setStatus("Waking the F1 backend and loading available sessions… this can take around 30-60 seconds.", "Waking the F1 backend and loading available sessions… this can take around 30-60 seconds.");
 
     try {
       renderSessionStep();
@@ -501,6 +515,7 @@ async function setupFlow() {
       const sessionSel = document.getElementById("session");
       const startBtn = document.getElementById("startBtn");
       const refreshBtn = document.getElementById("refreshResultsBtn");
+      let availableRounds = [];
 
       const updateStartBtnState = () => {
         const ready = Boolean(yearSel.value) && Boolean(roundSel.value) && Boolean(sessionSel.value);
@@ -520,6 +535,7 @@ async function setupFlow() {
         updateStartBtnState();
         try {
           const rounds = await api.rounds(yearSel.value, selectionControllers.rounds.signal);
+          availableRounds = rounds;
           rounds.forEach((r) => roundSel.add(new Option(formatRound(r), r.round)));
           await loadSessions();
         } catch (error) {
@@ -549,7 +565,7 @@ async function setupFlow() {
         try {
           await loadRounds();
         } catch (error) {
-          status.textContent = `Could not reload rounds (${error.message}).`;
+          setStatus(`Could not reload rounds (${error.message}).`, `Could not reload rounds (${error.message}).`);
           logTelemetry("error", "rounds_reload_failed", { year: yearSel.value, message: error.message });
         }
       });
@@ -557,7 +573,7 @@ async function setupFlow() {
         try {
           await loadSessions();
         } catch (error) {
-          status.textContent = `Could not reload sessions (${error.message}).`;
+          setStatus(`Could not reload sessions (${error.message}).`, `Could not reload sessions (${error.message}).`);
           logTelemetry("error", "sessions_reload_failed", { year: yearSel.value, round: roundSel.value, message: error.message });
         }
       });
@@ -567,20 +583,20 @@ async function setupFlow() {
 
       title.textContent = "Pick a Session";
       selectorsReady = true;
-      status.textContent = "Sessions loaded. Select year, round and session, then tap Start Game.";
+      setStatus("Sessions loaded. Select year, round and session, then tap Start Game.", "Sessions loaded. Select year, round and session, then tap Start Game.");
       updateStartBtnState();
 
       refreshBtn.addEventListener("click", async () => {
         updateStartBtnState();
         refreshBtn.disabled = true;
         showSpinner(true);
-        status.textContent = "Refreshing latest backend data…";
+        setStatus("Refreshing latest backend data…", "Refreshing latest backend data…");
         try {
           await api.refreshSessionResults(Number(yearSel.value), Number(roundSel.value), sessionSel.value);
-          status.textContent = "Latest data refreshed. You can start the game now.";
+          setStatus("Latest data refreshed. You can start the game now.", "Latest data refreshed. You can start the game now.");
         } catch (error) {
           logTelemetry("error", "manual_refresh_failed", { year: yearSel.value, round: roundSel.value, session: sessionSel.value, message: error.message });
-          status.textContent = "Could not refresh latest data.";
+          setStatus("Could not refresh latest data.", "Could not refresh latest data.");
         } finally {
           showSpinner(false);
           updateStartBtnState();
@@ -592,16 +608,17 @@ async function setupFlow() {
         state.player = playerInput.value.trim();
         state.year = Number(yearSel.value);
         state.round = Number(roundSel.value);
+        state.roundName = availableRounds.find((r) => Number(r.round) === state.round)?.round_name || "";
         state.session = sessionSel.value;
 
         if (!state.year || Number.isNaN(state.round) || !state.session) {
-          status.textContent = "Please select year, round and session before starting.";
+          setStatus("Please select year, round and session before starting.");
           updateStartBtnState();
           return;
         }
 
         renderScore();
-        status.textContent = "Loading session data… this can take up to 2 minutes on free tier.";
+        setStatus("Loading session data… this can take up to 2 minutes on free tier.", "Loading session data… this can take up to 2 minutes on free tier.");
         startBtn.disabled = true;
         showSpinner(true);
 
@@ -622,17 +639,18 @@ async function setupFlow() {
           setupPanel.classList.add("hidden");
           gamePanel.classList.remove("hidden");
           state.stage = 1;
+          setBackendFeedback("");
           renderGame();
         } catch (error) {
           logTelemetry("error", "start_game_failed", { year: state.year, round: state.round, session: state.session, message: error.message });
           showSpinner(false);
-          status.textContent = `Could not load that session yet (${error.message}). Please try another session.`;
+          setStatus(`Could not load that session yet (${error.message}). Please try another session.`, `Could not load that session yet (${error.message}). Please try another session.`);
           updateStartBtnState();
         }
       });
     } catch (error) {
       sessionStep.classList.add("hidden");
-      status.textContent = `Could not load available sessions (${error.message}). Please try again.`;
+      setStatus(`Could not load available sessions (${error.message}). Please try again.`, `Could not load available sessions (${error.message}). Please try again.`);
       loadSessionsBtn.disabled = false;
     } finally {
       showSpinner(false);
@@ -715,7 +733,7 @@ function prepareGame(results) {
 }
 
 function stageHeader(title, help) {
-  return `<h2 class="stage-title">${title}</h2><p class="status">${help}</p>`;
+  return `<div class="stage-head"><div><h2 class="stage-title">${title}</h2><p class="status">${help}</p></div><div class="session-chip"><span>Session: </span><strong>${getSessionDisplayLabel()}</strong></div></div>`;
 }
 
 function renderGame() {
@@ -997,7 +1015,7 @@ function renderStage123Board(options = {}) {
 function renderStage1() {
   const required = state.top10Teams.size;
   if (!state.stage1Current.length) state.stage1Current = Array(required).fill("");
-  gamePanel.innerHTML = `${stageHeader("Stage 1: Which Teams are in the Top 10?", `Pick ${required} teams. Cards show driver abbreviations.`)}<div class="inline-list" id="stage1Pool"></div><div class="board-wrap"><div id="stage123Board" class="board stage123-board"></div></div><button id="submitStage1" disabled>Submit Teams</button>`;
+  gamePanel.innerHTML = `${stageHeader("Stage 1: Which Teams are in the Top 10?", `Pick ${required} teams.`)}<div class="inline-list" id="stage1Pool"></div><div class="board-wrap"><div id="stage123Board" class="board stage123-board"></div></div><button id="submitStage1" disabled>Submit Teams</button>`;
   renderStage123Board({ stage1Editable: true });
 
   const poolDiv = document.getElementById("stage1Pool");
@@ -1088,7 +1106,7 @@ function renderStage2() {
 function renderStage3() {
   const teams = getStage123TeamOrder();
   const singleTeams = teams.filter((t) => state.top10TeamCounts.get(t) === 1);
-  gamePanel.innerHTML = `${stageHeader("Stage 3: Which Driver from 1-driver teams?", "Switch toggles for teams with only one top-10 finisher.")}<div class="board-wrap"><div id="stage123Board" class="board stage123-board"></div></div>${singleTeams.length ? '<button id="submitS3">Submit Stage 3</button>' : ''}`;
+  gamePanel.innerHTML = `${stageHeader("Stage 3: Which Driver from 1-driver teams?", "For teams with one driver in the top-10, pick which driver.")}<div class="board-wrap"><div id="stage123Board" class="board stage123-board"></div></div>${singleTeams.length ? '<button id="submitS3">Submit Stage 3</button>' : ''}`;
   if (!state.stage3Current.size) singleTeams.forEach((team) => state.stage3Current.set(team, (state.entrantsByTeam.get(team) || [])[0]));
   renderStage123Board({ stage3Editable: true });
   document.querySelectorAll("#stage123Board .switch input[data-team]").forEach((input) => {
@@ -1164,7 +1182,7 @@ function renderStage4(options = {}) {
   const currentRound = state.stage4Guesses[state.stage4Guesses.length - 1];
 
   gamePanel.innerHTML = `
-    ${stageHeader("Stage 4: Put the Top 10 in Order", "Drag drivers between pool and board, or click a pool card to place it in the next open slot. Correct slots lock in place.")}
+    ${stageHeader("Stage 4: Put the Top 10 in Order", "How many guesses do you need?")}
     <div class="inline-list" id="driverPool"></div>
     <div class="board-wrap"><div class="board" id="board"></div></div>
     ${finalBoard ? "" : '<button id="submitS4" disabled>Submit Order</button>'}
