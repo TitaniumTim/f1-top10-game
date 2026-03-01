@@ -14,6 +14,7 @@ const state = {
   stage: 0,
   year: null,
   round: null,
+  roundName: "",
   session: null,
   results: [],
   top10: [],
@@ -411,7 +412,8 @@ function setBackendFeedback(message = "") {
 
 function getSessionDisplayLabel() {
   if (!state.year || !state.round || !state.session) return "-";
-  return `${state.year} · R${state.round} · ${state.session}`;
+  const roundLabel = state.roundName || `Round ${state.round}`;
+  return `${state.year} · ${roundLabel} · ${state.session}`;
 }
 
 function renderSetup(message = "") {
@@ -513,6 +515,7 @@ async function setupFlow() {
       const sessionSel = document.getElementById("session");
       const startBtn = document.getElementById("startBtn");
       const refreshBtn = document.getElementById("refreshResultsBtn");
+      let availableRounds = [];
 
       const updateStartBtnState = () => {
         const ready = Boolean(yearSel.value) && Boolean(roundSel.value) && Boolean(sessionSel.value);
@@ -532,6 +535,7 @@ async function setupFlow() {
         updateStartBtnState();
         try {
           const rounds = await api.rounds(yearSel.value, selectionControllers.rounds.signal);
+          availableRounds = rounds;
           rounds.forEach((r) => roundSel.add(new Option(formatRound(r), r.round)));
           await loadSessions();
         } catch (error) {
@@ -604,6 +608,7 @@ async function setupFlow() {
         state.player = playerInput.value.trim();
         state.year = Number(yearSel.value);
         state.round = Number(roundSel.value);
+        state.roundName = availableRounds.find((r) => Number(r.round) === state.round)?.round_name || "";
         state.session = sessionSel.value;
 
         if (!state.year || Number.isNaN(state.round) || !state.session) {
@@ -728,7 +733,7 @@ function prepareGame(results) {
 }
 
 function stageHeader(title, help) {
-  return `<div class="stage-head"><div><h2 class="stage-title">${title}</h2><p class="status">${help}</p></div><div class="session-chip"><span>Session</span><strong>${getSessionDisplayLabel()}</strong></div></div>`;
+  return `<div class="stage-head"><div><h2 class="stage-title">${title}</h2><p class="status">${help}</p></div><div class="session-chip"><span>Session: </span><strong>${getSessionDisplayLabel()}</strong></div></div>`;
 }
 
 function renderGame() {
