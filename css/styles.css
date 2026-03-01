@@ -60,11 +60,14 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .board {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 120px;
-  gap: 0.5rem;
+  grid-auto-columns: minmax(112px, auto);
+  gap: 0.35rem;
   align-items: start;
+  justify-content: start;
+  width: max-content;
+  min-width: 100%;
 }
-.board-col { border: 1px solid #3d444d; border-radius: 10px; padding: 0.35rem; background: #131920; }
+.board-col { border: 1px solid #3d444d; border-radius: 10px; padding: 0.35rem; background: #131920; min-width: 112px; }
 .board-col h5 { margin: 0 0 0.35rem; font-size: 0.78rem; }
 .slot {
   border: 1px dashed #4b5563;
@@ -260,10 +263,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 
 .stage123-board {
-  grid-auto-columns: 220px;
+  grid-auto-columns: minmax(148px, auto);
+  gap: 0.3rem;
 }
 
 .stage-mini-col {
-  width: 170px;
-  min-width: 170px;
+  width: 148px;
+  min-width: 148px;
 }
