@@ -156,6 +156,55 @@ function getSessionType(sessionName) {
   return "unknown";
 }
 
+function toLapTimeMs(value) {
+  if (value === null || value === undefined) return Number.POSITIVE_INFINITY;
+  const raw = String(value).trim();
+  if (!raw) return Number.POSITIVE_INFINITY;
+  if (/^(dnf|dns|na|n\/a)$/i.test(raw)) return Number.POSITIVE_INFINITY;
+
+  if (/^\d+(?:\.\d+)?$/.test(raw)) return Number(raw) * 1000;
+
+  const parts = raw.split(":");
+  if (!parts.length || parts.some((part) => part.trim() === "")) return Number.POSITIVE_INFINITY;
+
+  const secondsPart = Number(parts.pop());
+  if (Number.isNaN(secondsPart)) return Number.POSITIVE_INFINITY;
+
+  let minutes = 0;
+  let hours = 0;
+  if (parts.length === 1) {
+    minutes = Number(parts[0]);
+    if (Number.isNaN(minutes)) return Number.POSITIVE_INFINITY;
+  } else if (parts.length === 2) {
+    hours = Number(parts[0]);
+    minutes = Number(parts[1]);
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return Number.POSITIVE_INFINITY;
+  } else if (parts.length > 2) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return (((hours * 60) + minutes) * 60 + secondsPart) * 1000;
+}
+
+function toSortablePosition(value) {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  return Number.POSITIVE_INFINITY;
+}
+
+function sortResultsForGame(results) {
+  return [...results]
+    .sort((a, b) => {
+      const positionDiff = toSortablePosition(a.position) - toSortablePosition(b.position);
+      if (positionDiff !== 0) return positionDiff;
+
+      const lapTimeDiff = toLapTimeMs(a.lap_time) - toLapTimeMs(b.lap_time);
+      if (lapTimeDiff !== 0) return lapTimeDiff;
+
+      return String(a.driver || "").localeCompare(String(b.driver || ""));
+    });
+}
+
 function getFinalInfoByDriver(driver) {
   const result = state.top10.find((row) => row.driver === driver);
   if (!result) return "N/A";
@@ -598,8 +647,9 @@ function prepareGame(results) {
 
   state.score = 100;
   state.submissions = 0;
-  state.results = results;
-  state.top10 = results.slice(0, 10);
+  const orderedResults = sortResultsForGame(results);
+  state.results = orderedResults;
+  state.top10 = orderedResults.slice(0, 10);
 
   const entrantsByTeam = new Map();
   const driverNumbersMap = new Map();
@@ -607,7 +657,7 @@ function prepareGame(results) {
   const driverTeamsMap = new Map();
   const teamColors = new Map();
 
-  results.forEach((r) => {
+  orderedResults.forEach((r) => {
     if (!entrantsByTeam.has(r.team)) entrantsByTeam.set(r.team, []);
     entrantsByTeam.get(r.team).push(r.driver);
     driverTeamsMap.set(r.driver, r.team);
