@@ -736,7 +736,7 @@ function renderStage123Board(options = {}) {
   };
 
   const indexCol = document.createElement("div");
-  indexCol.className = "board-col";
+  indexCol.className = "board-col stage-mini-col";
   indexCol.innerHTML = `<h5>Top 10 Team</h5>${Array.from({ length: rowCount }, (_, i) => `<div class="slot">${i + 1}</div>`).join("")}${addFooter ? '<div class="slot">Total</div>' : ''}`;
   board.appendChild(indexCol);
 
@@ -762,25 +762,24 @@ function renderStage123Board(options = {}) {
 
   if (stage1Editable) {
     const col = document.createElement("div");
-    col.className = "board-col";
+    col.className = "board-col stage-mini-col";
     col.innerHTML = "<h5>S1 Current</h5>";
     for (let i = 0; i < rowCount; i += 1) {
       const slot = document.createElement("div");
       const locked = state.stage1Locked.has(i);
       slot.className = `slot current ${locked ? "good" : ""}`;
       const team = state.stage1Current[i];
-      if (team) {
+      if (locked) {
+        slot.textContent = "";
+      } else if (team) {
         const token = createTeamCard(team, false);
         token.classList.remove("driver-token-btn");
         token.classList.add("driver-token-static");
-        const locked = state.stage1Locked.has(i);
-        if (!locked) {
-          token.addEventListener("click", () => {
-            state.stage1Current[i] = "";
-            renderStage1();
-          });
-          token.draggable = true;
-        }
+        token.addEventListener("click", () => {
+          state.stage1Current[i] = "";
+          renderStage1();
+        });
+        token.draggable = true;
         token.addEventListener("dragstart", (event) => {
           event.dataTransfer.setData("text/source-slot", String(i));
           event.dataTransfer.setData("text/team", team);
