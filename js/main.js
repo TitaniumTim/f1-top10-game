@@ -744,11 +744,13 @@ function renderStage123Board(options = {}) {
     const col = document.createElement("div");
     col.className = "board-col stage-mini-col";
     col.innerHTML = `<h5>S1 Guess ${idx + 1}</h5>`;
+    const lockedBefore = new Set(guess.lockedBefore || []);
     for (let i = 0; i < rowCount; i += 1) {
       const team = guess.teams[i] || "";
       const slot = document.createElement("div");
-      slot.className = `slot history-slot ${team ? (state.top10Teams.has(team) ? "good" : "bad") : ""}`;
-      if (team) {
+      const isLockedCell = lockedBefore.has(i);
+      slot.className = `slot history-slot ${isLockedCell ? "good" : (team ? (state.top10Teams.has(team) ? "good" : "bad") : "")}`;
+      if (!isLockedCell && team) {
         const token = createTeamCard(team, false);
         token.classList.remove("driver-token-btn");
         token.classList.add("driver-token-static");
@@ -840,8 +842,7 @@ function renderStage123Board(options = {}) {
       const corrected = state.stage2Correction.get(team);
       const correctGuess = state.stage2Attempts.at(-1)?.guesses.get(team) === corrected;
       slot.className = `slot history-slot ${correctGuess ? "good" : "bad"}`;
-      slot.textContent = String(corrected);
-      colorizeStageCell(slot, team);
+      slot.textContent = correctGuess ? "" : String(corrected);
       col.appendChild(slot);
     });
     col.innerHTML += "<div class='slot history-slot good'><strong>10</strong></div>";
@@ -857,13 +858,13 @@ function renderStage123Board(options = {}) {
       const locked = state.stage2Resolved.get(team);
       if (locked) {
         slot.className = "slot current good";
-        slot.textContent = String(locked);
+        slot.textContent = "";
       } else {
         slot.className = "slot current stage-toggle-slot";
         const checked = state.stage2Current.get(team) === 2;
         slot.innerHTML = `<div class="s2-row"><span class="s2-val">1</span><label class="switch"><input type="checkbox" data-team="${team}" ${checked ? "checked" : ""}/><span class="slider"></span></label><span class="s2-val">2</span></div>`;
+        colorizeStageCell(slot, team);
       }
-      colorizeStageCell(slot, team);
       col.appendChild(slot);
     });
     const total = [...state.stage2Current.values()].reduce((a, b) => a + b, 0);
@@ -880,15 +881,14 @@ function renderStage123Board(options = {}) {
       const slot = document.createElement("div");
       if (state.top10TeamCounts.get(team) === 2) {
         slot.className = "slot history-slot good";
-        slot.textContent = "Auto";
+        slot.textContent = "";
       } else {
         const correctDriver = state.top10SingleTeamDriver.get(team);
         const guess = last.get(team);
         const ok = guess === correctDriver;
         slot.className = `slot history-slot ${ok ? "good" : "bad"}`;
-        slot.textContent = formatDriverTag(correctDriver);
+        slot.textContent = ok ? "" : formatDriverTag(correctDriver);
       }
-      colorizeStageCell(slot, team);
       col.appendChild(slot);
     });
     if (addFooter) col.innerHTML += '<div class="slot"></div>';
@@ -904,17 +904,17 @@ function renderStage123Board(options = {}) {
       slot.className = "slot current stage-toggle-slot";
       if (state.top10TeamCounts.get(team) === 2) {
         slot.classList.add("good");
-        slot.textContent = "Both in top 10";
+        slot.textContent = "";
       } else if (state.stage3Resolved.has(team)) {
         slot.classList.add("good");
-        slot.textContent = formatDriverTag(state.stage3Resolved.get(team));
+        slot.textContent = "";
       } else {
         const drivers = state.entrantsByTeam.get(team) || [];
         const current = state.stage3Current.get(team) || drivers[0];
         const checked = current === drivers[1];
         slot.innerHTML = `<div class="s3-row"><span>${formatDriverTag(drivers[0])}</span><label class="switch"><input type="checkbox" data-team="${team}" ${checked ? "checked" : ""}/><span class="slider"></span></label><span>${formatDriverTag(drivers[1])}</span></div>`;
+        colorizeStageCell(slot, team);
       }
-      colorizeStageCell(slot, team);
       col.appendChild(slot);
     });
     if (addFooter) col.innerHTML += '<div class="slot"></div>';
@@ -949,6 +949,7 @@ function renderStage1() {
   document.getElementById("submitStage1").disabled = state.stage1Current.some((team, idx) => !team && !state.stage1Locked.has(idx));
   document.getElementById("submitStage1").addEventListener("click", () => {
     const guess = [...state.stage1Current];
+    const lockedBefore = new Set(state.stage1Locked.keys());
     let roundPerfect = true;
     for (let i = 0; i < required; i += 1) {
       if (state.stage1Locked.has(i)) continue;
@@ -960,7 +961,7 @@ function renderStage1() {
       }
     }
     const solved = state.stage1Locked.size === required;
-    state.stage1Guesses.push({ teams: guess });
+    state.stage1Guesses.push({ teams: guess, lockedBefore: [...lockedBefore] });
     bumpSubmission(roundPerfect && solved);
     state.stage1Current = Array.from({ length: required }, (_, idx) => state.stage1Locked.get(idx) || "");
     if (solved) {
