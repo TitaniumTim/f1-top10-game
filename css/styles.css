@@ -40,7 +40,8 @@ button { cursor: pointer; background: #222b36; font-weight: 600; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .status { color: var(--muted); margin-bottom: 0.75rem; }
-.stage-title { margin-top: 0; }
+.stage-head { display: flex; gap: 0.75rem; align-items: flex-start; justify-content: space-between; margin-bottom: 0.5rem; }
+.stage-title { margin-top: 0; margin-bottom: 0.35rem; }
 .team-grid, .driver-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.65rem; }
 .card {
   border: 1px solid #3d444d; border-radius: 10px; padding: 0.6rem; background: var(--panel-alt); transition: 0.2s;
@@ -157,9 +158,44 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
+
+.backend-feedback {
+  max-width: 1200px;
+  margin: 0 auto 1rem;
+  padding: 0 1rem;
+  color: var(--muted);
+  min-height: 1.3rem;
+}
+
+.session-chip {
+  margin-left: auto;
+  background: var(--panel);
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+  min-width: 220px;
+  text-align: right;
+}
+
+.session-chip span {
+  color: var(--muted);
+  display: block;
+  font-size: 0.75rem;
+}
+
+.session-chip strong {
+  font-size: 0.9rem;
+}
+
 @media (max-width: 860px) {
   .grid-3 { grid-template-columns: 1fr; }
   .topbar { flex-direction: column; }
+  .stage-head { flex-direction: column; }
+  .session-chip {
+    margin-left: 0;
+    text-align: left;
+    width: 100%;
+  }
 }
 
 
