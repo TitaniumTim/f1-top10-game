@@ -63,6 +63,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   grid-auto-columns: minmax(112px, auto);
   gap: 0.35rem;
   align-items: start;
+  justify-content: start;
+  width: max-content;
+  min-width: 100%;
 }
 .board-col { border: 1px solid #3d444d; border-radius: 10px; padding: 0.35rem; background: #131920; min-width: 112px; }
 .board-col h5 { margin: 0 0 0.35rem; font-size: 0.78rem; }
