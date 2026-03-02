@@ -74,6 +74,24 @@ function getSessionKey(year, round, session) {
   return `${year}::${round}::${session}`;
 }
 
+function buildSeasonYearOptions(apiYears) {
+  const currentYear = new Date().getFullYear();
+  const allYears = new Set();
+
+  for (let year = 1950; year <= currentYear; year += 1) {
+    allYears.add(year);
+  }
+
+  (Array.isArray(apiYears) ? apiYears : []).forEach((year) => {
+    const parsedYear = Number(year);
+    if (Number.isInteger(parsedYear)) {
+      allYears.add(parsedYear);
+    }
+  });
+
+  return [...allYears].sort((a, b) => b - a);
+}
+
 function readCache(key) {
   const entry = cache.get(key);
   if (!entry) return null;
@@ -523,7 +541,7 @@ async function setupFlow() {
         refreshBtn.disabled = !ready;
       };
 
-      const years = await api.years();
+      const years = buildSeasonYearOptions(await api.years());
       yearSel.innerHTML = "";
       years.forEach((y) => yearSel.add(new Option(y, y)));
 
