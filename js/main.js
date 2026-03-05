@@ -1073,8 +1073,8 @@ function renderStage2() {
       state.stage = 3;
       state.pendingOverlay = {
         title: "Stage 2 Complete",
-        message: "Great work — you found all top-10 drivers.",
-        buttonText: "Continue to Stage 3",
+        message: "Great work — review Stage 2 before moving to the final stage.",
+        buttonText: "Review Stage 2",
         onContinue: () => {}
       };
       return renderGame();
