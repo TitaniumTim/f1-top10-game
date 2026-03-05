@@ -187,6 +187,46 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   font-size: 0.9rem;
 }
 
+.driver-select-grid {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.55rem;
+}
+
+.driver-choice {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 0.35rem 0.5rem;
+  align-items: center;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #3d444d;
+  border-radius: 10px;
+  background: var(--panel-alt);
+  font-size: 0.78rem;
+}
+
+.driver-choice input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--good);
+}
+
+.driver-choice span {
+  font-weight: 700;
+}
+
+.driver-choice small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.driver-choice.selected {
+  outline: 1px solid var(--good);
+}
+
 @media (max-width: 860px) {
   .grid-3 { grid-template-columns: 1fr; }
   .topbar { flex-direction: column; }
