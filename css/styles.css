@@ -227,6 +227,66 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   outline: 1px solid var(--good);
 }
 
+
+.stage2-driver-board {
+  grid-auto-columns: minmax(220px, auto);
+}
+
+.stage2-driver-col {
+  min-width: 220px;
+}
+
+.stage2-driver-slot {
+  min-height: 86px;
+  height: auto;
+  align-items: flex-start;
+  padding: 0.3rem;
+}
+
+.stage2-driver-row {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.stage2-driver-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  border: 1px solid #3d444d;
+  border-radius: 7px;
+  padding: 0.18rem 0.28rem;
+  background: #111822;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.stage2-driver-chip input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--good);
+}
+
+.stage2-driver-chip.good {
+  border-color: var(--good);
+  background: rgba(46,160,67,0.15);
+}
+
+.stage2-driver-chip.bad {
+  border-color: #a64d4d;
+  background: rgba(166,77,77,0.18);
+}
+
+.stage2-driver-chip.selected {
+  outline: 1px solid var(--warn);
+}
+
+.stage2-driver-chip.selectable {
+  cursor: pointer;
+}
+
 @media (max-width: 860px) {
   .grid-3 { grid-template-columns: 1fr; }
   .topbar { flex-direction: column; }
