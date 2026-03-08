@@ -278,6 +278,7 @@ function createStage4DriverCard(driver, options = {}) {
   const node = document.createElement(asButton ? "button" : "div");
   node.className = `driver-token${asButton ? " driver-token-btn" : ""}`;
   node.textContent = formatDriverTag(driver);
+  node.title = formatDriverHoverLabel(driver);
   node.dataset.driver = driver;
   if (draggable) node.draggable = true;
 
@@ -1278,6 +1279,10 @@ function renderStage4(options = {}) {
           token.addEventListener("dragstart", (event) => {
             event.dataTransfer.setData("text/driver", guess[i]);
             event.dataTransfer.setData("text/source-index", String(i));
+          });
+          token.addEventListener("click", () => {
+            currentRound[i] = "";
+            renderStage4();
           });
         }
         slot.appendChild(token);
