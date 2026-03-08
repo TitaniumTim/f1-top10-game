@@ -260,8 +260,19 @@ function sortResultsForGame(results) {
 function getFinalInfoByDriver(driver, orderIndex) {
   const result = state.top10.find((row) => row.driver === driver);
   if (!result) return "N/A";
-  if (orderIndex === 0) return `Time: ${formatInfoValue(result.race_time)}`;
-  return `Gap: ${formatInfoValue(result.gap_to_winner)}`;
+
+  if (getSessionType(state.session) === "race") {
+    if (orderIndex === 0) return `Time: ${formatInfoValue(result.race_time)}`;
+    return `Gap: ${formatInfoValue(result.gap_to_winner)}`;
+  }
+
+  const leader = state.top10.find((row) => toSortablePosition(row.position) === 1) || state.top10[0];
+  const leaderLapMs = toLapTimeMs(leader?.lap_time);
+  const driverLapMs = toLapTimeMs(result.lap_time);
+
+  if (orderIndex === 0) return `Fastest Lap: ${formatInfoValue(result.lap_time)}`;
+  if (!Number.isFinite(leaderLapMs) || !Number.isFinite(driverLapMs)) return "Gap: N/A";
+  return `Gap: +${((driverLapMs - leaderLapMs) / 1000).toFixed(3)}s`;
 }
 
 function createStage4DriverCard(driver, options = {}) {
