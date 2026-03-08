@@ -986,6 +986,8 @@ function renderStage2Board(options = {}) {
   if (!board) return;
   board.innerHTML = "";
 
+  const stage2Columns = [];
+
   const teamCol = document.createElement("div");
   teamCol.className = "board-col stage2-driver-col";
   teamCol.innerHTML = "<h5>Teams</h5>";
@@ -997,67 +999,77 @@ function renderStage2Board(options = {}) {
     teamCol.appendChild(slot);
   });
   board.appendChild(teamCol);
+  stage2Columns.push(teamCol);
 
   state.stage2Attempts.forEach((attempt, idx) => {
     const col = document.createElement("div");
     col.className = "board-col stage2-driver-col";
     col.innerHTML = `<h5>S2 Guess ${idx + 1}</h5>`;
+    const selectedSet = new Set(attempt.selected || []);
+    const hitSet = new Set(attempt.hits || []);
+    const missSet = new Set(attempt.misses || []);
+
     teams.forEach((team) => {
       const slot = document.createElement("div");
       slot.className = "slot stage2-driver-slot history-slot";
       const row = document.createElement("div");
       row.className = "stage2-driver-row";
-      const selectedDrivers = (state.entrantsByTeam.get(team) || []).filter((driver) => attempt.selected.includes(driver));
-      selectedDrivers.forEach((driver) => {
+      (state.entrantsByTeam.get(team) || []).forEach((driver) => {
         const chip = document.createElement("span");
         chip.className = "stage2-driver-chip";
-        if (attempt.hits.includes(driver)) chip.classList.add("good");
-        if (attempt.misses.includes(driver)) chip.classList.add("bad");
+        chip.title = formatDriverHoverLabel(driver);
         chip.textContent = formatDriverTag(driver);
+        if (!selectedSet.has(driver)) chip.classList.add("neutral");
+        else if (hitSet.has(driver)) chip.classList.add("good");
+        else if (missSet.has(driver)) chip.classList.add("bad");
         row.appendChild(chip);
       });
       slot.appendChild(row);
       col.appendChild(slot);
     });
     board.appendChild(col);
+    stage2Columns.push(col);
   });
 
-  if (!includeCurrent) return;
-
-  const currentCol = document.createElement("div");
-  currentCol.className = "board-col stage2-driver-col";
-  currentCol.innerHTML = "<h5>S2 Current</h5>";
-  teams.forEach((team) => {
-    const slot = document.createElement("div");
-    slot.className = "slot stage2-driver-slot current";
-    slot.style.borderColor = getTeamColor(team);
-    const row = document.createElement("div");
-    row.className = "stage2-driver-row";
-    (state.entrantsByTeam.get(team) || []).forEach((driver) => {
-      const label = document.createElement("label");
-      label.className = "stage2-driver-chip selectable";
-      const locked = state.stage2Locked.has(driver);
-      const rejected = state.stage2Rejected.has(driver);
-      if (locked) label.classList.add("good");
-      if (rejected) label.classList.add("bad");
-      if (state.stage2Current.has(driver)) label.classList.add("selected");
-      label.title = formatDriverHoverLabel(driver);
-      label.innerHTML = `<input type="checkbox" data-driver="${driver}" ${state.stage2Current.has(driver) ? "checked" : ""} ${locked || rejected ? "disabled" : ""}/><span>${formatDriverTag(driver)}</span>`;
-      row.appendChild(label);
+  if (includeCurrent) {
+    const currentCol = document.createElement("div");
+    currentCol.className = "board-col stage2-driver-col";
+    currentCol.innerHTML = "<h5>S2 Current</h5>";
+    teams.forEach((team) => {
+      const slot = document.createElement("div");
+      slot.className = "slot stage2-driver-slot current";
+      slot.style.borderColor = getTeamColor(team);
+      const row = document.createElement("div");
+      row.className = "stage2-driver-row";
+      (state.entrantsByTeam.get(team) || []).forEach((driver) => {
+        const label = document.createElement("label");
+        label.className = "stage2-driver-chip selectable";
+        const locked = state.stage2Locked.has(driver);
+        const rejected = state.stage2Rejected.has(driver);
+        if (locked) label.classList.add("good");
+        if (rejected) label.classList.add("bad");
+        if (state.stage2Current.has(driver)) label.classList.add("selected");
+        label.title = formatDriverHoverLabel(driver);
+        label.innerHTML = `<input type="checkbox" data-driver="${driver}" ${state.stage2Current.has(driver) ? "checked" : ""} ${locked || rejected ? "disabled" : ""}/><span>${formatDriverTag(driver)}</span>`;
+        row.appendChild(label);
+      });
+      slot.appendChild(row);
+      currentCol.appendChild(slot);
     });
-    slot.appendChild(row);
-    currentCol.appendChild(slot);
-  });
-  board.appendChild(currentCol);
+    board.appendChild(currentCol);
+    stage2Columns.push(currentCol);
+  }
 
-  const teamSlots = teamCol.querySelectorAll(".stage2-driver-slot");
-  const currentSlots = currentCol.querySelectorAll(".stage2-driver-slot");
-  teamSlots.forEach((slot, idx) => {
-    const currentSlot = currentSlots[idx];
-    if (!currentSlot) return;
-    slot.style.minHeight = `${currentSlot.offsetHeight}px`;
+  const slotGroups = stage2Columns.map((col) => [...col.querySelectorAll(".stage2-driver-slot")]);
+  teams.forEach((_, rowIdx) => {
+    const rowSlots = slotGroups.map((slots) => slots[rowIdx]).filter(Boolean);
+    const rowHeight = Math.max(...rowSlots.map((slot) => slot.offsetHeight), 34);
+    rowSlots.forEach((slot) => {
+      slot.style.minHeight = `${rowHeight}px`;
+    });
   });
 }
+
 
 function renderStage2() {
   if (!state.stage2Current.size) state.stage2Current = new Set(state.stage2Locked);
