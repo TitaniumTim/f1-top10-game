@@ -146,6 +146,14 @@ function getDriverTeam(driver) {
   return state.driverTeams.get(driver) || "";
 }
 
+
+function sanitizeDriverAbbreviation(raw) {
+  const value = String(raw ?? "").trim();
+  if (!value) return "";
+  if (/^(nan|none|null|n\/a|na|undefined)$/i.test(value)) return "";
+  return value;
+}
+
 function fallbackDriverAbbreviation(driver) {
   if (!driver) return "---";
   const cleaned = String(driver).trim().replace(/\./g, "");
@@ -725,7 +733,9 @@ function prepareGame(results) {
     const driverNumber = Number(r.driver_number ?? r.driverNumber ?? r.number ?? r.driver_no);
     if (!Number.isNaN(driverNumber)) driverNumbersMap.set(r.driver, driverNumber);
 
-    const abbreviation = ((r.driver_code ?? r.driverCode ?? r.code ?? r.driver_abbreviation ?? r.driverAbbreviation) || "").trim();
+    const abbreviation = sanitizeDriverAbbreviation(
+      r.driver_code ?? r.driverCode ?? r.code ?? r.driver_abbreviation ?? r.driverAbbreviation
+    );
     driverAbbreviationsMap.set(r.driver, abbreviation || fallbackDriverAbbreviation(r.driver));
 
     const teamColor = normalizeHexColor(r.team_colour ?? r.team_color ?? r.teamColour);
