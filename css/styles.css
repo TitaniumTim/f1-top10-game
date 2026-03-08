@@ -280,6 +280,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   background: rgba(166,77,77,0.18);
 }
 
+.stage2-driver-chip.neutral {
+  border-color: rgba(222, 226, 230, 0.95);
+  border-style: dashed;
+  background: transparent;
+}
+
 .stage2-driver-chip.selected {
   outline: 1px solid var(--warn);
 }
