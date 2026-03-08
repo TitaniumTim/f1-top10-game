@@ -38,6 +38,7 @@ const state = {
   stage3History: [],
   stage4Locked: new Map(),
   stage4Guesses: [],
+  stage4InvalidPairs: new Set(),
   stage1Guesses: [],
   stage1Current: [],
   stage2Attempts: [],
@@ -256,29 +257,11 @@ function sortResultsForGame(results) {
     });
 }
 
-function getFinalInfoByDriver(driver) {
+function getFinalInfoByDriver(driver, orderIndex) {
   const result = state.top10.find((row) => row.driver === driver);
   if (!result) return "N/A";
-
-  const sessionType = getSessionType(state.session);
-
-  if (sessionType === "practice") {
-    const laps = formatInfoValue(result.laps);
-    const lapTime = formatInfoValue(result.lap_time);
-    return `${laps} laps | Best: ${lapTime}`;
-  }
-
-  if (sessionType === "qualifying") {
-    return `Lap: ${formatInfoValue(result.lap_time)}`;
-  }
-
-  if (sessionType === "race") {
-    const isWinner = Number(result.position) === 1;
-    if (isWinner) return `Time: ${formatInfoValue(result.race_time)}`;
-    return `Gap: ${formatInfoValue(result.gap_to_winner)}`;
-  }
-
-  return "N/A";
+  if (orderIndex === 0) return `Time: ${formatInfoValue(result.race_time)}`;
+  return `Gap: ${formatInfoValue(result.gap_to_winner)}`;
 }
 
 function createStage4DriverCard(driver, options = {}) {
@@ -773,6 +756,7 @@ function prepareGame(results) {
   state.stage3History = [];
   state.stage4Locked = new Map();
   state.stage4Guesses = [];
+  state.stage4InvalidPairs = new Set();
   state.stage1Guesses = [];
   state.stage1Current = [];
   state.stage2Attempts = [];
@@ -1175,6 +1159,27 @@ function getStage4ActualOrder() {
     .map((r) => r.driver);
 }
 
+function getStage4PositionDriverKey(positionIdx, driver) {
+  return `${positionIdx}::${driver}`;
+}
+
+function hasStage4KnownWrongPlacement(round) {
+  return round.some((driver, idx) => {
+    if (!driver || state.stage4Locked.has(idx)) return false;
+    return state.stage4InvalidPairs.has(getStage4PositionDriverKey(idx, driver));
+  });
+}
+
+function getStage4KnownWrongPlacements(round) {
+  return round
+    .map((driver, idx) => {
+      if (!driver || state.stage4Locked.has(idx)) return "";
+      if (!state.stage4InvalidPairs.has(getStage4PositionDriverKey(idx, driver))) return "";
+      return `P${idx + 1} ${formatDriverTag(driver)}`;
+    })
+    .filter(Boolean);
+}
+
 function renderStage4(options = {}) {
   const { finalBoard = false } = options;
   const pool = getStage4Pool();
@@ -1189,7 +1194,7 @@ function renderStage4(options = {}) {
     ${stageHeader("Stage 3: Put the Top 10 in Order", "How many guesses do you need?")}
     <div class="inline-list" id="driverPool"></div>
     <div class="board-wrap"><div class="board" id="board"></div></div>
-    ${finalBoard ? "" : '<button id="submitS4" disabled>Submit Order</button>'}
+    ${finalBoard ? "" : '<p class="status" id="stage3RuleStatus"></p><button id="submitS4" disabled>Submit Order</button>'}
   `;
 
   const poolDiv = document.getElementById("driverPool");
@@ -1311,8 +1316,8 @@ function renderStage4(options = {}) {
     infoCol.className = "board-col";
     infoCol.innerHTML = "<h5>Session Info</h5>";
 
-    actualOrder.forEach((driver) => {
-      const info = getFinalInfoByDriver(driver);
+    actualOrder.forEach((driver, idx) => {
+      const info = getFinalInfoByDriver(driver, idx);
       const slot = document.createElement("div");
       slot.className = "slot result-info-slot";
       slot.innerHTML = `<div><div class="result-info-main">${info}</div></div>`;
@@ -1324,7 +1329,17 @@ function renderStage4(options = {}) {
 
   if (finalBoard) return;
 
-  const canSubmit = currentRound.every((d, i) => state.stage4Locked.has(i) || d);
+  const hasAllRequiredPositions = currentRound.every((d, i) => state.stage4Locked.has(i) || d);
+  const hasKnownWrongPlacement = hasStage4KnownWrongPlacement(currentRound);
+  const knownWrongPlacements = getStage4KnownWrongPlacements(currentRound);
+  const stage3RuleStatus = document.getElementById("stage3RuleStatus");
+  if (stage3RuleStatus) {
+    stage3RuleStatus.textContent = hasKnownWrongPlacement
+      ? `Cannot submit: these placements were already shown incorrect (${knownWrongPlacements.join(", ")}).`
+      : "";
+  }
+
+  const canSubmit = hasAllRequiredPositions && !hasKnownWrongPlacement;
   document.getElementById("submitS4").disabled = !canSubmit;
 
   document.getElementById("submitS4").addEventListener("click", () => {
@@ -1336,6 +1351,9 @@ function renderStage4(options = {}) {
         state.stage4Locked.set(i, actual[i]);
       } else {
         roundPerfect = false;
+        if (currentRound[i]) {
+          state.stage4InvalidPairs.add(getStage4PositionDriverKey(i, currentRound[i]));
+        }
       }
     }
 
