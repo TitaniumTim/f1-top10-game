@@ -164,6 +164,26 @@ function formatDriverTag(driver) {
   return `#${number || "--"} ${tag}`;
 }
 
+function formatDriverHoverLabel(driver) {
+  const number = getDriverNumber(driver) || "--";
+  const name = String(driver || "").trim();
+  if (!name) return `#${number} ---`;
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return `#${number} ${parts[0]}`;
+  const initial = parts[0][0] ? `${parts[0][0]}.` : "";
+  const lastName = parts[parts.length - 1];
+  return `#${number} ${initial}${lastName}`;
+}
+
+function getStage2CoverageState(selectedDrivers) {
+  const selectedSet = selectedDrivers instanceof Set ? selectedDrivers : new Set(selectedDrivers);
+  const missingTeams = getStage123TeamOrder().filter((team) => {
+    const teamDrivers = state.entrantsByTeam.get(team) || [];
+    return !teamDrivers.some((driver) => selectedSet.has(driver) || state.stage2Locked.has(driver));
+  });
+  return { covered: missingTeams.length === 0, missingTeams };
+}
+
 function formatInfoValue(value) {
   if (value === null || value === undefined) return "N/A";
   const text = String(value).trim();
@@ -783,7 +803,9 @@ function createTeamCard(team, draggable = false) {
   card.type = "button";
   if (draggable) card.draggable = true;
   const drivers = (state.entrantsByTeam.get(team) || []).map((d) => `#${getDriverNumber(d) || "--"} ${getDriverAbbreviation(d)}`);
+  const hoverLines = (state.entrantsByTeam.get(team) || []).map((driver) => formatDriverHoverLabel(driver));
   card.innerHTML = `<strong>${team}</strong><span>${drivers.join(" · ")}</span>`;
+  card.title = hoverLines.join("\n");
   applyTeamCardStyle(card, team);
   return card;
 }
@@ -1019,6 +1041,7 @@ function renderStage2Board(options = {}) {
       if (locked) label.classList.add("good");
       if (rejected) label.classList.add("bad");
       if (state.stage2Current.has(driver)) label.classList.add("selected");
+      label.title = formatDriverHoverLabel(driver);
       label.innerHTML = `<input type="checkbox" data-driver="${driver}" ${state.stage2Current.has(driver) ? "checked" : ""} ${locked || rejected ? "disabled" : ""}/><span>${formatDriverTag(driver)}</span>`;
       row.appendChild(label);
     });
@@ -1026,6 +1049,14 @@ function renderStage2Board(options = {}) {
     currentCol.appendChild(slot);
   });
   board.appendChild(currentCol);
+
+  const teamSlots = teamCol.querySelectorAll(".stage2-driver-slot");
+  const currentSlots = currentCol.querySelectorAll(".stage2-driver-slot");
+  teamSlots.forEach((slot, idx) => {
+    const currentSlot = currentSlots[idx];
+    if (!currentSlot) return;
+    slot.style.minHeight = `${currentSlot.offsetHeight}px`;
+  });
 }
 
 function renderStage2() {
@@ -1035,7 +1066,11 @@ function renderStage2() {
   renderStage2Board({ includeCurrent: true });
 
   const updateStatus = () => {
-    document.getElementById("stage2Count").textContent = `Selected ${state.stage2Current.size}/10 · Locked ${state.stage2Locked.size}/10`;
+    const coverage = getStage2CoverageState(state.stage2Current);
+    const coverageText = coverage.covered
+      ? "Team coverage complete"
+      : `Need at least one from: ${coverage.missingTeams.join(", ")}`;
+    document.getElementById("stage2Count").textContent = `Selected ${state.stage2Current.size}/10 · Locked ${state.stage2Locked.size}/10 · ${coverageText}`;
   };
   updateStatus();
 
@@ -1053,7 +1088,10 @@ function renderStage2() {
     });
   });
 
-  const canSubmit = state.stage2Current.size === 10 && [...state.stage2Locked].every((driver) => state.stage2Current.has(driver));
+  const coverage = getStage2CoverageState(state.stage2Current);
+  const canSubmit = state.stage2Current.size === 10
+    && [...state.stage2Locked].every((driver) => state.stage2Current.has(driver))
+    && coverage.covered;
   document.getElementById("submitS2").disabled = !canSubmit;
   document.getElementById("submitS2").addEventListener("click", () => {
     const selected = [...state.stage2Current];
