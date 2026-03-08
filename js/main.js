@@ -38,6 +38,7 @@ const state = {
   stage3History: [],
   stage4Locked: new Map(),
   stage4Guesses: [],
+  stage4InvalidPairs: new Set(),
   stage1Guesses: [],
   stage1Current: [],
   stage2Attempts: [],
@@ -146,6 +147,14 @@ function getDriverTeam(driver) {
   return state.driverTeams.get(driver) || "";
 }
 
+
+function sanitizeDriverAbbreviation(raw) {
+  const value = String(raw ?? "").trim();
+  if (!value) return "";
+  if (/^(nan|none|null|n\/a|na|undefined)$/i.test(value)) return "";
+  return value;
+}
+
 function fallbackDriverAbbreviation(driver) {
   if (!driver) return "---";
   const cleaned = String(driver).trim().replace(/\./g, "");
@@ -162,6 +171,26 @@ function formatDriverTag(driver) {
   const number = getDriverNumber(driver);
   const tag = getDriverAbbreviation(driver);
   return `#${number || "--"} ${tag}`;
+}
+
+function formatDriverHoverLabel(driver) {
+  const number = getDriverNumber(driver) || "--";
+  const name = String(driver || "").trim();
+  if (!name) return `#${number} ---`;
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return `#${number} ${parts[0]}`;
+  const initial = parts[0][0] ? `${parts[0][0]}.` : "";
+  const lastName = parts[parts.length - 1];
+  return `#${number} ${initial}${lastName}`;
+}
+
+function getStage2CoverageState(selectedDrivers) {
+  const selectedSet = selectedDrivers instanceof Set ? selectedDrivers : new Set(selectedDrivers);
+  const missingTeams = getStage123TeamOrder().filter((team) => {
+    const teamDrivers = state.entrantsByTeam.get(team) || [];
+    return !teamDrivers.some((driver) => selectedSet.has(driver) || state.stage2Locked.has(driver));
+  });
+  return { covered: missingTeams.length === 0, missingTeams };
 }
 
 function formatInfoValue(value) {
@@ -228,29 +257,11 @@ function sortResultsForGame(results) {
     });
 }
 
-function getFinalInfoByDriver(driver) {
+function getFinalInfoByDriver(driver, orderIndex) {
   const result = state.top10.find((row) => row.driver === driver);
   if (!result) return "N/A";
-
-  const sessionType = getSessionType(state.session);
-
-  if (sessionType === "practice") {
-    const laps = formatInfoValue(result.laps);
-    const lapTime = formatInfoValue(result.lap_time);
-    return `${laps} laps | Best: ${lapTime}`;
-  }
-
-  if (sessionType === "qualifying") {
-    return `Lap: ${formatInfoValue(result.lap_time)}`;
-  }
-
-  if (sessionType === "race") {
-    const isWinner = Number(result.position) === 1;
-    if (isWinner) return `Time: ${formatInfoValue(result.race_time)}`;
-    return `Gap: ${formatInfoValue(result.gap_to_winner)}`;
-  }
-
-  return "N/A";
+  if (orderIndex === 0) return `Time: ${formatInfoValue(result.race_time)}`;
+  return `Gap: ${formatInfoValue(result.gap_to_winner)}`;
 }
 
 function createStage4DriverCard(driver, options = {}) {
@@ -258,6 +269,7 @@ function createStage4DriverCard(driver, options = {}) {
   const node = document.createElement(asButton ? "button" : "div");
   node.className = `driver-token${asButton ? " driver-token-btn" : ""}`;
   node.textContent = formatDriverTag(driver);
+  node.title = formatDriverHoverLabel(driver);
   node.dataset.driver = driver;
   if (draggable) node.draggable = true;
 
@@ -704,7 +716,9 @@ function prepareGame(results) {
     const driverNumber = Number(r.driver_number ?? r.driverNumber ?? r.number ?? r.driver_no);
     if (!Number.isNaN(driverNumber)) driverNumbersMap.set(r.driver, driverNumber);
 
-    const abbreviation = ((r.driver_code ?? r.driverCode ?? r.code ?? r.driver_abbreviation ?? r.driverAbbreviation) || "").trim();
+    const abbreviation = sanitizeDriverAbbreviation(
+      r.driver_code ?? r.driverCode ?? r.code ?? r.driver_abbreviation ?? r.driverAbbreviation
+    );
     driverAbbreviationsMap.set(r.driver, abbreviation || fallbackDriverAbbreviation(r.driver));
 
     const teamColor = normalizeHexColor(r.team_colour ?? r.team_color ?? r.teamColour);
@@ -742,6 +756,7 @@ function prepareGame(results) {
   state.stage3History = [];
   state.stage4Locked = new Map();
   state.stage4Guesses = [];
+  state.stage4InvalidPairs = new Set();
   state.stage1Guesses = [];
   state.stage1Current = [];
   state.stage2Attempts = [];
@@ -783,7 +798,9 @@ function createTeamCard(team, draggable = false) {
   card.type = "button";
   if (draggable) card.draggable = true;
   const drivers = (state.entrantsByTeam.get(team) || []).map((d) => `#${getDriverNumber(d) || "--"} ${getDriverAbbreviation(d)}`);
+  const hoverLines = (state.entrantsByTeam.get(team) || []).map((driver) => formatDriverHoverLabel(driver));
   card.innerHTML = `<strong>${team}</strong><span>${drivers.join(" · ")}</span>`;
+  card.title = hoverLines.join("\n");
   applyTeamCardStyle(card, team);
   return card;
 }
@@ -964,6 +981,8 @@ function renderStage2Board(options = {}) {
   if (!board) return;
   board.innerHTML = "";
 
+  const stage2Columns = [];
+
   const teamCol = document.createElement("div");
   teamCol.className = "board-col stage2-driver-col";
   teamCol.innerHTML = "<h5>Teams</h5>";
@@ -975,58 +994,77 @@ function renderStage2Board(options = {}) {
     teamCol.appendChild(slot);
   });
   board.appendChild(teamCol);
+  stage2Columns.push(teamCol);
 
   state.stage2Attempts.forEach((attempt, idx) => {
     const col = document.createElement("div");
     col.className = "board-col stage2-driver-col";
     col.innerHTML = `<h5>S2 Guess ${idx + 1}</h5>`;
+    const selectedSet = new Set(attempt.selected || []);
+    const hitSet = new Set(attempt.hits || []);
+    const missSet = new Set(attempt.misses || []);
+
     teams.forEach((team) => {
       const slot = document.createElement("div");
       slot.className = "slot stage2-driver-slot history-slot";
       const row = document.createElement("div");
       row.className = "stage2-driver-row";
-      const selectedDrivers = (state.entrantsByTeam.get(team) || []).filter((driver) => attempt.selected.includes(driver));
-      selectedDrivers.forEach((driver) => {
+      (state.entrantsByTeam.get(team) || []).forEach((driver) => {
         const chip = document.createElement("span");
         chip.className = "stage2-driver-chip";
-        if (attempt.hits.includes(driver)) chip.classList.add("good");
-        if (attempt.misses.includes(driver)) chip.classList.add("bad");
+        chip.title = formatDriverHoverLabel(driver);
         chip.textContent = formatDriverTag(driver);
+        if (!selectedSet.has(driver)) chip.classList.add("neutral");
+        else if (hitSet.has(driver)) chip.classList.add("good");
+        else if (missSet.has(driver)) chip.classList.add("bad");
         row.appendChild(chip);
       });
       slot.appendChild(row);
       col.appendChild(slot);
     });
     board.appendChild(col);
+    stage2Columns.push(col);
   });
 
-  if (!includeCurrent) return;
-
-  const currentCol = document.createElement("div");
-  currentCol.className = "board-col stage2-driver-col";
-  currentCol.innerHTML = "<h5>S2 Current</h5>";
-  teams.forEach((team) => {
-    const slot = document.createElement("div");
-    slot.className = "slot stage2-driver-slot current";
-    slot.style.borderColor = getTeamColor(team);
-    const row = document.createElement("div");
-    row.className = "stage2-driver-row";
-    (state.entrantsByTeam.get(team) || []).forEach((driver) => {
-      const label = document.createElement("label");
-      label.className = "stage2-driver-chip selectable";
-      const locked = state.stage2Locked.has(driver);
-      const rejected = state.stage2Rejected.has(driver);
-      if (locked) label.classList.add("good");
-      if (rejected) label.classList.add("bad");
-      if (state.stage2Current.has(driver)) label.classList.add("selected");
-      label.innerHTML = `<input type="checkbox" data-driver="${driver}" ${state.stage2Current.has(driver) ? "checked" : ""} ${locked || rejected ? "disabled" : ""}/><span>${formatDriverTag(driver)}</span>`;
-      row.appendChild(label);
+  if (includeCurrent) {
+    const currentCol = document.createElement("div");
+    currentCol.className = "board-col stage2-driver-col";
+    currentCol.innerHTML = "<h5>S2 Current</h5>";
+    teams.forEach((team) => {
+      const slot = document.createElement("div");
+      slot.className = "slot stage2-driver-slot current";
+      slot.style.borderColor = getTeamColor(team);
+      const row = document.createElement("div");
+      row.className = "stage2-driver-row";
+      (state.entrantsByTeam.get(team) || []).forEach((driver) => {
+        const label = document.createElement("label");
+        label.className = "stage2-driver-chip selectable";
+        const locked = state.stage2Locked.has(driver);
+        const rejected = state.stage2Rejected.has(driver);
+        if (locked) label.classList.add("good");
+        if (rejected) label.classList.add("bad");
+        if (state.stage2Current.has(driver)) label.classList.add("selected");
+        label.title = formatDriverHoverLabel(driver);
+        label.innerHTML = `<input type="checkbox" data-driver="${driver}" ${state.stage2Current.has(driver) ? "checked" : ""} ${locked || rejected ? "disabled" : ""}/><span>${formatDriverTag(driver)}</span>`;
+        row.appendChild(label);
+      });
+      slot.appendChild(row);
+      currentCol.appendChild(slot);
     });
-    slot.appendChild(row);
-    currentCol.appendChild(slot);
+    board.appendChild(currentCol);
+    stage2Columns.push(currentCol);
+  }
+
+  const slotGroups = stage2Columns.map((col) => [...col.querySelectorAll(".stage2-driver-slot")]);
+  teams.forEach((_, rowIdx) => {
+    const rowSlots = slotGroups.map((slots) => slots[rowIdx]).filter(Boolean);
+    const rowHeight = Math.max(...rowSlots.map((slot) => slot.offsetHeight), 34);
+    rowSlots.forEach((slot) => {
+      slot.style.minHeight = `${rowHeight}px`;
+    });
   });
-  board.appendChild(currentCol);
 }
+
 
 function renderStage2() {
   if (!state.stage2Current.size) state.stage2Current = new Set(state.stage2Locked);
@@ -1035,7 +1073,11 @@ function renderStage2() {
   renderStage2Board({ includeCurrent: true });
 
   const updateStatus = () => {
-    document.getElementById("stage2Count").textContent = `Selected ${state.stage2Current.size}/10 · Locked ${state.stage2Locked.size}/10`;
+    const coverage = getStage2CoverageState(state.stage2Current);
+    const coverageText = coverage.covered
+      ? "Team coverage complete"
+      : `Need at least one from: ${coverage.missingTeams.join(", ")}`;
+    document.getElementById("stage2Count").textContent = `Selected ${state.stage2Current.size}/10 · Locked ${state.stage2Locked.size}/10 · ${coverageText}`;
   };
   updateStatus();
 
@@ -1053,7 +1095,10 @@ function renderStage2() {
     });
   });
 
-  const canSubmit = state.stage2Current.size === 10 && [...state.stage2Locked].every((driver) => state.stage2Current.has(driver));
+  const coverage = getStage2CoverageState(state.stage2Current);
+  const canSubmit = state.stage2Current.size === 10
+    && [...state.stage2Locked].every((driver) => state.stage2Current.has(driver))
+    && coverage.covered;
   document.getElementById("submitS2").disabled = !canSubmit;
   document.getElementById("submitS2").addEventListener("click", () => {
     const selected = [...state.stage2Current];
@@ -1114,6 +1159,27 @@ function getStage4ActualOrder() {
     .map((r) => r.driver);
 }
 
+function getStage4PositionDriverKey(positionIdx, driver) {
+  return `${positionIdx}::${driver}`;
+}
+
+function hasStage4KnownWrongPlacement(round) {
+  return round.some((driver, idx) => {
+    if (!driver || state.stage4Locked.has(idx)) return false;
+    return state.stage4InvalidPairs.has(getStage4PositionDriverKey(idx, driver));
+  });
+}
+
+function getStage4KnownWrongPlacements(round) {
+  return round
+    .map((driver, idx) => {
+      if (!driver || state.stage4Locked.has(idx)) return "";
+      if (!state.stage4InvalidPairs.has(getStage4PositionDriverKey(idx, driver))) return "";
+      return `P${idx + 1} ${formatDriverTag(driver)}`;
+    })
+    .filter(Boolean);
+}
+
 function renderStage4(options = {}) {
   const { finalBoard = false } = options;
   const pool = getStage4Pool();
@@ -1128,7 +1194,7 @@ function renderStage4(options = {}) {
     ${stageHeader("Stage 3: Put the Top 10 in Order", "How many guesses do you need?")}
     <div class="inline-list" id="driverPool"></div>
     <div class="board-wrap"><div class="board" id="board"></div></div>
-    ${finalBoard ? "" : '<button id="submitS4" disabled>Submit Order</button>'}
+    ${finalBoard ? "" : '<p class="status" id="stage3RuleStatus"></p><button id="submitS4" disabled>Submit Order</button>'}
   `;
 
   const poolDiv = document.getElementById("driverPool");
@@ -1229,6 +1295,10 @@ function renderStage4(options = {}) {
             event.dataTransfer.setData("text/driver", guess[i]);
             event.dataTransfer.setData("text/source-index", String(i));
           });
+          token.addEventListener("click", () => {
+            currentRound[i] = "";
+            renderStage4();
+          });
         }
         slot.appendChild(token);
       } else if (!finalBoard && idx === state.stage4Guesses.length - 1 && !state.stage4Locked.has(i)) {
@@ -1246,8 +1316,8 @@ function renderStage4(options = {}) {
     infoCol.className = "board-col";
     infoCol.innerHTML = "<h5>Session Info</h5>";
 
-    actualOrder.forEach((driver) => {
-      const info = getFinalInfoByDriver(driver);
+    actualOrder.forEach((driver, idx) => {
+      const info = getFinalInfoByDriver(driver, idx);
       const slot = document.createElement("div");
       slot.className = "slot result-info-slot";
       slot.innerHTML = `<div><div class="result-info-main">${info}</div></div>`;
@@ -1259,7 +1329,17 @@ function renderStage4(options = {}) {
 
   if (finalBoard) return;
 
-  const canSubmit = currentRound.every((d, i) => state.stage4Locked.has(i) || d);
+  const hasAllRequiredPositions = currentRound.every((d, i) => state.stage4Locked.has(i) || d);
+  const hasKnownWrongPlacement = hasStage4KnownWrongPlacement(currentRound);
+  const knownWrongPlacements = getStage4KnownWrongPlacements(currentRound);
+  const stage3RuleStatus = document.getElementById("stage3RuleStatus");
+  if (stage3RuleStatus) {
+    stage3RuleStatus.textContent = hasKnownWrongPlacement
+      ? `Cannot submit: these placements were already shown incorrect (${knownWrongPlacements.join(", ")}).`
+      : "";
+  }
+
+  const canSubmit = hasAllRequiredPositions && !hasKnownWrongPlacement;
   document.getElementById("submitS4").disabled = !canSubmit;
 
   document.getElementById("submitS4").addEventListener("click", () => {
@@ -1271,6 +1351,9 @@ function renderStage4(options = {}) {
         state.stage4Locked.set(i, actual[i]);
       } else {
         roundPerfect = false;
+        if (currentRound[i]) {
+          state.stage4InvalidPairs.add(getStage4PositionDriverKey(i, currentRound[i]));
+        }
       }
     }
 
