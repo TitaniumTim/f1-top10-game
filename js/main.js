@@ -50,6 +50,8 @@ const state = {
   stage3Current: new Map(),
   pendingOverlay: null,
   stage123TeamOrder: [],
+  gameStartedAt: null,
+  gameCompletedAt: null,
   backendHealth: { status: "checking", message: "Checking backend status…" }
 };
 
@@ -460,6 +462,354 @@ function getSessionDisplayLabel() {
   return `${state.year} · ${roundLabel} · ${state.session}`;
 }
 
+function getSessionExportLabel() {
+  if (!state.year || !state.round || !state.session) return "Unknown session";
+  return `${state.year} - ${state.roundName || `Round ${state.round}`} - ${state.session}`;
+}
+
+function formatPlayedAt(dateLike) {
+  if (!dateLike) return "N/A";
+  const value = dateLike instanceof Date ? dateLike : new Date(dateLike);
+  if (Number.isNaN(value.getTime())) return "N/A";
+  return value.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+}
+
+function sanitizeFilePart(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase() || "game";
+}
+
+function buildExportFileBase() {
+  return [
+    "f1-top10",
+    sanitizeFilePart(state.player || "player"),
+    sanitizeFilePart(state.year),
+    sanitizeFilePart(state.roundName || `round-${state.round}`),
+    sanitizeFilePart(state.session)
+  ].join("-");
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;");
+}
+
+function toCsvCell(value) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, "\"\"")}"`;
+}
+
+function getEntrantSummaryRows() {
+  return [...state.entrantsByTeam.entries()]
+    .sort(([a], [b]) => byTeamName(a, b))
+    .map(([team, drivers]) => ({
+      team,
+      drivers: drivers.map((driver) => formatDriverTag(driver)).join(" | ")
+    }));
+}
+
+function getTop10SummaryRows() {
+  return getStage4ActualOrder().map((driver, idx) => ({
+    position: idx + 1,
+    driver,
+    tag: formatDriverTag(driver),
+    team: getDriverTeam(driver),
+    info: getFinalInfoByDriver(driver, idx)
+  }));
+}
+
+function getGameHistoryRows() {
+  const rows = [];
+
+  state.stage1Guesses.forEach((guess, idx) => {
+    guess.teams.forEach((team, positionIdx) => {
+      rows.push({
+        stage: "Stage 1",
+        attempt: idx + 1,
+        slot: `Top-10 team slot ${positionIdx + 1}`,
+        selection: team || "",
+        outcome: state.top10Teams.has(team) ? "Top-10 team" : (team ? "Miss" : "Blank")
+      });
+    });
+  });
+
+  state.stage2Attempts.forEach((attempt, idx) => {
+    attempt.selected.forEach((driver) => {
+      rows.push({
+        stage: "Stage 2",
+        attempt: idx + 1,
+        slot: getDriverTeam(driver) || "Unassigned",
+        selection: `${driver} (${formatDriverTag(driver)})`,
+        outcome: attempt.hits.includes(driver) ? "Top-10 driver" : "Miss"
+      });
+    });
+  });
+
+  state.stage4Guesses.forEach((guess, idx) => {
+    guess.forEach((driver, positionIdx) => {
+      const actualDriver = state.top10[positionIdx]?.driver;
+      rows.push({
+        stage: "Stage 3",
+        attempt: idx + 1,
+        slot: `P${positionIdx + 1}`,
+        selection: driver ? `${driver} (${formatDriverTag(driver)})` : "",
+        outcome: !driver ? "Blank" : (driver === actualDriver ? "Correct position" : "Wrong position")
+      });
+    });
+  });
+
+  return rows;
+}
+
+function getGameExportData() {
+  return {
+    player: state.player || "Unknown player",
+    session: getSessionExportLabel(),
+    score: `${state.score}/100`,
+    submissions: state.submissions,
+    playedAt: formatPlayedAt(state.gameCompletedAt || state.gameStartedAt || new Date()),
+    entrantRows: getEntrantSummaryRows(),
+    top10Rows: getTop10SummaryRows(),
+    historyRows: getGameHistoryRows()
+  };
+}
+
+function buildStage1BoardCsvLines() {
+  const rowCount = state.top10Teams.size;
+  const header = ["Stage 1 board", "Top-10 team slots"];
+  const guessHeaders = state.stage1Guesses.map((_, idx) => `Guess ${idx + 1}`);
+  const lines = [
+    header,
+    ["Slot", "Final team", ...guessHeaders]
+  ];
+
+  for (let i = 0; i < rowCount; i += 1) {
+    const finalTeam = state.stage1Locked.get(i) || "";
+    const guessCells = state.stage1Guesses.map((guess) => {
+      const team = guess.teams?.[i] || "";
+      if (!team) return "";
+      return team === finalTeam ? `${team} (correct)` : `${team} (miss)`;
+    });
+    lines.push([`Slot ${i + 1}`, finalTeam, ...guessCells]);
+  }
+
+  if (!state.stage1Guesses.length) {
+    lines.push(["No Stage 1 guesses were recorded."]);
+  }
+
+  return lines;
+}
+
+function buildStage2BoardCsvLines() {
+  const teams = getStage123TeamOrder();
+  const guessHeaders = state.stage2Attempts.map((_, idx) => `Guess ${idx + 1}`);
+  const lines = [
+    ["Stage 2 board", "Top-10 driver discovery by team"],
+    ["Team", "Final top-10 drivers", ...guessHeaders]
+  ];
+
+  teams.forEach((team) => {
+    const finalTop10Drivers = (state.entrantsByTeam.get(team) || [])
+      .filter((driver) => state.top10Drivers.has(driver))
+      .map((driver) => formatDriverTag(driver))
+      .join(" | ");
+
+    const guessCells = state.stage2Attempts.map((attempt) => {
+      const selectedForTeam = (state.entrantsByTeam.get(team) || [])
+        .filter((driver) => attempt.selected.includes(driver))
+        .map((driver) => {
+          if (attempt.hits.includes(driver)) return `${formatDriverTag(driver)} (hit)`;
+          if (attempt.misses.includes(driver)) return `${formatDriverTag(driver)} (miss)`;
+          return formatDriverTag(driver);
+        });
+      return selectedForTeam.join(" | ");
+    });
+
+    lines.push([team, finalTop10Drivers, ...guessCells]);
+  });
+
+  if (!state.stage2Attempts.length) {
+    lines.push(["No Stage 2 guesses were recorded."]);
+  }
+
+  return lines;
+}
+
+function buildStage3BoardCsvLines() {
+  const actualOrder = getStage4ActualOrder();
+  const guessHeaders = state.stage4Guesses.map((_, idx) => `Guess ${idx + 1}`);
+  const lines = [
+    ["Stage 3 board", "Final ordering board"],
+    ["Position", "Final driver", ...guessHeaders]
+  ];
+
+  for (let i = 0; i < 10; i += 1) {
+    const finalDriver = actualOrder[i] ? formatDriverTag(actualOrder[i]) : "";
+    const guessCells = state.stage4Guesses.map((guess) => {
+      const guessedDriver = guess?.[i];
+      if (!guessedDriver) return "";
+      const tag = formatDriverTag(guessedDriver);
+      return guessedDriver === actualOrder[i] ? `${tag} (correct)` : `${tag} (wrong)`;
+    });
+    lines.push([`P${i + 1}`, finalDriver, ...guessCells]);
+  }
+
+  if (!state.stage4Guesses.length) {
+    lines.push(["No Stage 3 guesses were recorded."]);
+  }
+
+  return lines;
+}
+
+function downloadGameCsv() {
+  const exportData = getGameExportData();
+  const lines = [
+    ["Player", exportData.player],
+    ["Session", exportData.session],
+    ["Score", exportData.score],
+    ["Submissions", exportData.submissions],
+    ["Played at", exportData.playedAt],
+    [],
+    ["Entrants"],
+    ["Team", "Drivers"],
+    ...exportData.entrantRows.map((row) => [row.team, row.drivers]),
+    [],
+    ["Final top 10"],
+    ["Position", "Driver", "Tag", "Team", "Info"],
+    ...exportData.top10Rows.map((row) => [row.position, row.driver, row.tag, row.team, row.info]),
+    [],
+    ...buildStage1BoardCsvLines(),
+    [],
+    ...buildStage2BoardCsvLines(),
+    [],
+    ...buildStage3BoardCsvLines(),
+    [],
+    ["Detailed guess history"],
+    ["Stage", "Attempt", "Slot", "Selection", "Outcome"],
+    ...exportData.historyRows.map((row) => [row.stage, row.attempt, row.slot, row.selection, row.outcome])
+  ];
+
+  const csv = lines
+    .map((row) => row.map((cell) => toCsvCell(cell ?? "")).join(","))
+    .join("\n");
+
+  triggerDownload(new Blob([csv], { type: "text/csv;charset=utf-8" }), `${buildExportFileBase()}.csv`);
+}
+
+function buildPrintableGameHtml() {
+  const exportData = getGameExportData();
+  const entrantRows = exportData.entrantRows
+    .map((row) => `<tr><td>${escapeHtml(row.team)}</td><td>${escapeHtml(row.drivers)}</td></tr>`)
+    .join("");
+  const top10Rows = exportData.top10Rows
+    .map((row) => `<tr><td>${row.position}</td><td>${escapeHtml(row.driver)}</td><td>${escapeHtml(row.tag)}</td><td>${escapeHtml(row.team)}</td><td>${escapeHtml(row.info)}</td></tr>`)
+    .join("");
+  const historyRows = exportData.historyRows
+    .map((row) => `<tr><td>${escapeHtml(row.stage)}</td><td>${row.attempt}</td><td>${escapeHtml(row.slot)}</td><td>${escapeHtml(row.selection)}</td><td>${escapeHtml(row.outcome)}</td></tr>`)
+    .join("");
+
+  return `<!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>F1 Top 10 Game Record</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+      h1, h2 { margin-bottom: 8px; }
+      .meta { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 10px 24px; margin-bottom: 24px; }
+      .meta div { padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; background: #f9fafb; }
+      .meta strong { display: block; font-size: 12px; text-transform: uppercase; color: #4b5563; margin-bottom: 4px; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }
+      th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; vertical-align: top; }
+      th { background: #f3f4f6; }
+      .hint { margin-bottom: 18px; color: #4b5563; }
+    </style>
+  </head>
+  <body>
+    <h1>F1 Top 10 Game Record</h1>
+    <p class="hint">Use your browser's print dialog to save this page as a PDF.</p>
+    <section class="meta">
+      <div><strong>Player</strong>${escapeHtml(exportData.player)}</div>
+      <div><strong>Session</strong>${escapeHtml(exportData.session)}</div>
+      <div><strong>Score</strong>${escapeHtml(exportData.score)}</div>
+      <div><strong>Submissions</strong>${exportData.submissions}</div>
+      <div><strong>Played at</strong>${escapeHtml(exportData.playedAt)}</div>
+    </section>
+    <h2>Session entrants</h2>
+    <table>
+      <thead><tr><th>Team</th><th>Drivers</th></tr></thead>
+      <tbody>${entrantRows}</tbody>
+    </table>
+    <h2>Final top 10</h2>
+    <table>
+      <thead><tr><th>Position</th><th>Driver</th><th>Tag</th><th>Team</th><th>Session info</th></tr></thead>
+      <tbody>${top10Rows}</tbody>
+    </table>
+    <h2>Guess history</h2>
+    <table>
+      <thead><tr><th>Stage</th><th>Attempt</th><th>Slot</th><th>Selection</th><th>Outcome</th></tr></thead>
+      <tbody>${historyRows}</tbody>
+    </table>
+  </body>
+  </html>`;
+}
+
+function downloadGamePdf() {
+  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  if (!printWindow) {
+    alert("Please allow pop-ups to export your game as a PDF.");
+    return;
+  }
+
+  printWindow.document.open();
+  printWindow.document.write(buildPrintableGameHtml());
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => {
+    printWindow.print();
+  }, 250);
+}
+
+function getFinishActionButtonsMarkup() {
+  return `
+    <div class="finish-actions">
+      <button id="downloadCsvBtn" type="button">Download CSV</button>
+      <button id="downloadPdfBtn" type="button">Download PDF</button>
+      <button id="playAgain" type="button">Play Another Session</button>
+    </div>
+  `;
+}
+
+function attachFinishActionListeners(root = document) {
+  root.getElementById("downloadCsvBtn")?.addEventListener("click", downloadGameCsv);
+  root.getElementById("downloadPdfBtn")?.addEventListener("click", downloadGamePdf);
+  root.getElementById("playAgain")?.addEventListener("click", () => location.reload());
+}
+
 function renderSetup(message = "") {
   setupPanel.innerHTML = `
     <h2 id="setupTitle">Let's Get Started</h2>
@@ -779,6 +1129,8 @@ function prepareGame(results) {
   state.stage3Current = new Map();
   state.pendingOverlay = null;
   state.stage123TeamOrder = [];
+  state.gameStartedAt = new Date();
+  state.gameCompletedAt = null;
   renderScore();
 }
 
@@ -1203,6 +1555,7 @@ function renderStage4(options = {}) {
 
   gamePanel.innerHTML = `
     ${stageHeader("Stage 3: Put the Top 10 in Order", "How many guesses do you need?")}
+    ${finalBoard ? `<div class="finish-toolbar"><p class="status">Your final board is shown below. You can export this completed game or start another session.</p>${getFinishActionButtonsMarkup()}</div>` : ""}
     <div class="inline-list" id="driverPool"></div>
     <div class="board-wrap"><div class="board" id="board"></div></div>
     ${finalBoard ? "" : '<p class="status" id="stage3RuleStatus"></p><button id="submitS4" disabled>Submit Order</button>'}
@@ -1336,6 +1689,7 @@ function renderStage4(options = {}) {
     });
 
     board.appendChild(infoCol);
+    attachFinishActionListeners(document);
   }
 
   if (finalBoard) return;
@@ -1381,6 +1735,7 @@ function renderStage4(options = {}) {
 }
 
 function renderFinish() {
+  state.gameCompletedAt = state.gameCompletedAt || new Date();
   renderStage4({ finalBoard: true });
 
   const overlay = document.createElement("div");
@@ -1390,9 +1745,12 @@ function renderFinish() {
       <h2 id="finishTitle">🏁 Finished</h2>
       <p>Congratulations ${state.player} — you scored <strong>${state.score}</strong> points.</p>
       <p>Total submissions: <strong>${state.submissions}</strong>. Perfect game is 3 submissions for 100 points.</p>
+      <p>Download a record of your game with your final result, session entrants, and every guess you made.</p>
       <div class="finish-actions">
         <button id="dismissFinish">View Final Board</button>
-        <button id="playAgain">Play Another Session</button>
+        <button id="overlayDownloadCsvBtn" type="button">Download CSV</button>
+        <button id="overlayDownloadPdfBtn" type="button">Download PDF</button>
+        <button id="playAgainOverlay" type="button">Play Another Session</button>
       </div>
     </div>
   `;
@@ -1401,7 +1759,9 @@ function renderFinish() {
   document.getElementById("dismissFinish").addEventListener("click", () => {
     overlay.remove();
   });
-  document.getElementById("playAgain").addEventListener("click", () => location.reload());
+  document.getElementById("overlayDownloadCsvBtn").addEventListener("click", downloadGameCsv);
+  document.getElementById("overlayDownloadPdfBtn").addEventListener("click", downloadGamePdf);
+  document.getElementById("playAgainOverlay").addEventListener("click", () => location.reload());
 }
 
 setupFlow();
