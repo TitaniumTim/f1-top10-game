@@ -546,7 +546,9 @@ function getGameHistoryRows() {
   const rows = [];
 
   state.stage1Guesses.forEach((guess, idx) => {
+    const lockedBefore = new Set(guess.lockedBefore || []);
     guess.teams.forEach((team, positionIdx) => {
+      if (lockedBefore.has(positionIdx)) return;
       rows.push({
         stage: "Stage 1",
         attempt: idx + 1,
@@ -558,7 +560,9 @@ function getGameHistoryRows() {
   });
 
   state.stage2Attempts.forEach((attempt, idx) => {
-    attempt.selected.forEach((driver) => {
+    const lockedBefore = new Set(attempt.lockedBefore || []);
+    const selectedDrivers = attempt.selected.filter((driver) => !lockedBefore.has(driver));
+    selectedDrivers.forEach((driver) => {
       rows.push({
         stage: "Stage 2",
         attempt: idx + 1,
@@ -598,6 +602,96 @@ function getGameExportData() {
   };
 }
 
+function buildStage1BoardCsvLines() {
+  const rowCount = state.top10Teams.size;
+  const header = ["Stage 1 board", "Top-10 team slots"];
+  const guessHeaders = state.stage1Guesses.map((_, idx) => `Guess ${idx + 1}`);
+  const lines = [
+    header,
+    ["Slot", "Final team", ...guessHeaders]
+  ];
+
+  for (let i = 0; i < rowCount; i += 1) {
+    const finalTeam = state.stage1Locked.get(i) || "";
+    const guessCells = state.stage1Guesses.map((guess) => {
+      const lockedBefore = new Set(guess.lockedBefore || []);
+      if (lockedBefore.has(i)) return "(locked from prior)";
+      const team = guess.teams?.[i] || "";
+      if (!team) return "";
+      return team === finalTeam ? `${team} (correct)` : `${team} (miss)`;
+    });
+    lines.push([`Slot ${i + 1}`, finalTeam, ...guessCells]);
+  }
+
+  if (!state.stage1Guesses.length) {
+    lines.push(["No Stage 1 guesses were recorded."]);
+  }
+
+  return lines;
+}
+
+function buildStage2BoardCsvLines() {
+  const teams = getStage123TeamOrder();
+  const guessHeaders = state.stage2Attempts.map((_, idx) => `Guess ${idx + 1}`);
+  const lines = [
+    ["Stage 2 board", "Top-10 driver discovery by team"],
+    ["Team", "Final top-10 drivers", ...guessHeaders]
+  ];
+
+  teams.forEach((team) => {
+    const finalTop10Drivers = (state.entrantsByTeam.get(team) || [])
+      .filter((driver) => state.top10Drivers.has(driver))
+      .map((driver) => formatDriverTag(driver))
+      .join(" | ");
+
+    const guessCells = state.stage2Attempts.map((attempt) => {
+      const lockedBefore = new Set(attempt.lockedBefore || []);
+      const selectedForTeam = (state.entrantsByTeam.get(team) || [])
+        .filter((driver) => attempt.selected.includes(driver) && !lockedBefore.has(driver))
+        .map((driver) => {
+          if (attempt.hits.includes(driver)) return `${formatDriverTag(driver)} (hit)`;
+          if (attempt.misses.includes(driver)) return `${formatDriverTag(driver)} (miss)`;
+          return formatDriverTag(driver);
+        });
+      return selectedForTeam.join(" | ");
+    });
+
+    lines.push([team, finalTop10Drivers, ...guessCells]);
+  });
+
+  if (!state.stage2Attempts.length) {
+    lines.push(["No Stage 2 guesses were recorded."]);
+  }
+
+  return lines;
+}
+
+function buildStage3BoardCsvLines() {
+  const actualOrder = getStage4ActualOrder();
+  const guessHeaders = state.stage4Guesses.map((_, idx) => `Guess ${idx + 1}`);
+  const lines = [
+    ["Stage 3 board", "Final ordering board"],
+    ["Position", "Final driver", ...guessHeaders]
+  ];
+
+  for (let i = 0; i < 10; i += 1) {
+    const finalDriver = actualOrder[i] ? formatDriverTag(actualOrder[i]) : "";
+    const guessCells = state.stage4Guesses.map((guess) => {
+      const guessedDriver = guess?.[i];
+      if (!guessedDriver) return "";
+      const tag = formatDriverTag(guessedDriver);
+      return guessedDriver === actualOrder[i] ? `${tag} (correct)` : `${tag} (wrong)`;
+    });
+    lines.push([`P${i + 1}`, finalDriver, ...guessCells]);
+  }
+
+  if (!state.stage4Guesses.length) {
+    lines.push(["No Stage 3 guesses were recorded."]);
+  }
+
+  return lines;
+}
+
 function downloadGameCsv() {
   const exportData = getGameExportData();
   const lines = [
@@ -615,7 +709,13 @@ function downloadGameCsv() {
     ["Position", "Driver", "Tag", "Team", "Info"],
     ...exportData.top10Rows.map((row) => [row.position, row.driver, row.tag, row.team, row.info]),
     [],
-    ["Guess history"],
+    ...buildStage1BoardCsvLines(),
+    [],
+    ...buildStage2BoardCsvLines(),
+    [],
+    ...buildStage3BoardCsvLines(),
+    [],
+    ["Detailed guess history"],
     ["Stage", "Attempt", "Slot", "Selection", "Outcome"],
     ...exportData.historyRows.map((row) => [row.stage, row.attempt, row.slot, row.selection, row.outcome])
   ];
@@ -686,10 +786,16 @@ function buildPrintableGameHtml() {
 }
 
 function downloadGamePdf() {
-  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  const printWindow = window.open("", "_blank");
   if (!printWindow) {
     alert("Please allow pop-ups to export your game as a PDF.");
     return;
+  }
+
+  try {
+    printWindow.opener = null;
+  } catch {
+    // Ignore if browser blocks setting opener explicitly.
   }
 
   printWindow.document.open();
@@ -1372,6 +1478,7 @@ function renderStage2() {
   document.getElementById("submitS2").disabled = !canSubmit;
   document.getElementById("submitS2").addEventListener("click", () => {
     const selected = [...state.stage2Current];
+    const lockedBefore = [...state.stage2Locked];
     const newlyGuessed = selected.filter((driver) => !state.stage2Locked.has(driver));
     const hits = newlyGuessed.filter((driver) => state.top10Drivers.has(driver));
     const misses = newlyGuessed.filter((driver) => !state.top10Drivers.has(driver));
@@ -1379,7 +1486,7 @@ function renderStage2() {
     hits.forEach((driver) => state.stage2Locked.add(driver));
     misses.forEach((driver) => state.stage2Rejected.add(driver));
 
-    state.stage2Attempts.push({ selected, hits, misses });
+    state.stage2Attempts.push({ selected, hits, misses, lockedBefore });
 
     const solved = state.stage2Locked.size === 10;
     bumpSubmission(misses.length === 0 && solved);
